@@ -1,4 +1,5 @@
-#include <ncurses.h>
+#include <locale.h>
+#include <ncursesw/curses.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -190,7 +191,7 @@ void draw_screen() {
     title_actual_start_x = screen_width - title_len - 1;
     if (title_actual_start_x < 0) title_actual_start_x = 0;  // 왼쪽도 넘어가지 않도록
   }
-  // 추가: title_actual_start_x 가 current_x_pos (Lives 끝나는 지점) 보다 작아지는 경우 방지
+  // title_actual_start_x 가 current_x_pos (Lives 끝나는 지점) 보다 작아지는 경우 방지
   if (title_actual_start_x < current_x_pos + 1) {
     title_actual_start_x = current_x_pos + 1;
   }
@@ -203,12 +204,6 @@ void draw_screen() {
   mvvline(FRAME_TOP_Y + 1, FRAME_LEFT_X, BORDER_CHAR, FRAME_BOTTOM_Y - FRAME_TOP_Y - 1);
   mvvline(FRAME_TOP_Y + 1, FRAME_RIGHT_X, BORDER_CHAR, FRAME_BOTTOM_Y - FRAME_TOP_Y - 1);
 
-  // 모서리도 BORDER_CHAR로 통일 (ACS_코너 문자 대신)
-  mvaddch(FRAME_TOP_Y, FRAME_LEFT_X, BORDER_CHAR);
-  mvaddch(FRAME_TOP_Y, FRAME_RIGHT_X, BORDER_CHAR);
-  mvaddch(FRAME_BOTTOM_Y, FRAME_LEFT_X, BORDER_CHAR);
-  mvaddch(FRAME_BOTTOM_Y, FRAME_RIGHT_X, BORDER_CHAR);
-
   // 활성화된 단어들 그리기 (게임 영역 내부 좌표 사용)
   pthread_mutex_lock(&words_mutex);
   for (int i = 0; i < MAX_WORDS; ++i) {
@@ -218,7 +213,7 @@ void draw_screen() {
   }
   pthread_mutex_unlock(&words_mutex);
 
-  // 입력 프롬프트 (화면 맨 아래, "입력: "으로 변경)
+  // 입력 프롬프트
   mvprintw(screen_height - 1, 1, "입력: %s", current_input);
 
   if (current_game_over_status) {
@@ -301,6 +296,7 @@ void cleanup_finished_threads() {
 }
 
 int main() {
+  setlocale(LC_ALL, "");
   srand(time(NULL));
 
   initscr();
