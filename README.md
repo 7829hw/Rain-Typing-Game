@@ -1,98 +1,163 @@
-# Rain Typing Game (빗물 타이핑 게임)
+# 🌧️ Rain Typing Game
 
-## 📖 프로젝트 개요 (Project Overview)
+## 📖 프로젝트 개요
 
-"Rain Typing Game"은 화면 상단에서 단어들이 빗방울처럼 떨어지는 고전적인 타이핑 게임입니다. 플레이어는 각 단어가 화면 바닥에 닿기 전에 정확히 타이핑하여 제거해야 합니다. 이 게임은 C언어로 작성되었으며, 터미널 UI를 위해 `ncurses` 라이브러리를 사용하고, 각 단어의 독립적인 움직임을 위해 `pthreads` (POSIX Threads)를 활용합니다. 플레이어는 게임 시작 전 로그인을 해야 하며, 다른 플레이어들과의 점수를 리더보드에서 확인할 수 있습니다.
+"Rain Typing Game"은 화면 상단에서 단어들이 빗방울처럼 떨어지는 고전적인 타이핑 게임입니다. 플레이어는 각 단어가 화면 바닥에 닿기 전에 정확히 타이핑하고 Enter 키를 눌러 제거해야 합니다.
 
-This "Rain Typing Game" is a classic typing game where words fall from the top of the screen like raindrops. Players must accurately type each word before it hits the bottom of the screen to eliminate it. The game is written in C, utilizing the `ncurses` library for the terminal user interface and `pthreads` (POSIX Threads) for the independent movement of each word. Players must log in before starting the game, and can check their scores against others on a leaderboard.
+이 프로젝트는 **클라이언트-서버 아키텍처**로 구현되었습니다:
 
-## ✨ 주요 기능 (Key Features)
+*   **서버:** 사용자 인증(회원가입, 로그인), 점수 제출, 리더보드 데이터 관리, 사용자/점수 데이터의 텍스트 파일 영속화를 담당합니다. pthreads를 사용하여 여러 클라이언트 연결을 동시에 관리할 수 있습니다.
+*   **클라이언트:** 터미널 기반 상호작용을 위해 ncurses 라이브러리를 사용하여 사용자 인터페이스를 제공합니다. 게임 로직(떨어지는 단어, 입력 처리, 게임 중 로컬 점수 계산)을 관리하며, 인증, 점수 제출, 리더보드 요청을 위해 서버와 통신합니다. 클라이언트는 또한 각 떨어지는 단어의 독립적인 움직임을 위해 pthreads를 활용합니다.
 
-*   **단어 낙하 (Falling Words):** 화면 상단에서 단어들이 무작위로 생성되어 아래로 떨어집니다.
-*   **타이핑 입력 (Typing Input):** 플레이어는 떨어지는 단어와 일치하는 문자열을 입력하여 단어를 제거합니다.
-*   **점수 시스템 (Scoring System):** 성공적으로 단어를 제거할 때마다 점수를 얻습니다.
-*   **생명 시스템 (Lives System):** 단어가 바닥에 닿으면 생명을 잃습니다. 생명이 모두 소진되면 게임이 종료됩니다.
-*   **로그인 기능 (Login Functionality):** 플레이어는 게임 시작 전에 사용자 이름을 입력하여 로그인합니다.
-*   **리더보드 (Leaderboard):** 게임 종료 후 또는 메뉴에서 역대 최고 점수들을 확인할 수 있습니다.
-*   **멀티스레딩 (Multithreading):** 각 떨어지는 단어는 개별 스레드에서 처리되어 동시에 여러 단어가 부드럽게 움직입니다.
-*   **Ncurses 기반 UI (Ncurses-based UI):** 모든 게임 인터페이스는 터미널 환경에서 `ncurses`를 통해 구현됩니다.
+## ✨ 주요 기능
 
-## 🛠️ 기술 스택 (Tech Stack)
+*   **클라이언트-서버 아키텍처:** 게임 로직/UI(클라이언트)와 데이터 관리/인증(서버) 간의 명확한 관심사 분리.
+*   **사용자 인증:**
+    *   신규 사용자 회원가입.
+    *   기존 사용자 로그인.
+    *   세션 관리 (로그아웃 또는 연결 해제 전까지 로그인 상태 유지).
+*   **실시간 게임 플레이 (클라이언트 측):**
+    *   화면 상단에서 단어가 동적으로 떨어짐.
+    *   플레이어가 단어를 입력하고 제출하여 제거.
+    *   단어가 바닥에 닿으면 생명력 감소.
+    *   생명력이 다하거나 플레이어가 게임 중 Ctrl+C로 종료하면 게임 종료.
+*   **점수 시스템:**
+    *   정확히 입력한 단어의 길이에 따라 점수 증가.
+    *   최종 점수를 서버에 제출 가능.
+*   **리더보드:**
+    *   플레이어는 서버에서 관리하는 상위 점수 리더보드 확인 가능.
+    *   리더보드는 각 사용자의 최고 점수를 표시.
+*   **영구 데이터 저장 (서버 측):**
+    *   사용자 자격 증명(아이디, 평문 비밀번호 - *이 버전에서는 단순화를 위해*)은 `data/users.txt`에 저장.
+    *   플레이어 점수는 `data/scores.txt`에 저장.
+*   **멀티스레딩:**
+    *   **서버:** pthreads를 사용하여 여러 클라이언트 연결을 동시에 처리.
+    *   **클라이언트:** pthreads를 사용하여 각 떨어지는 단어의 독립적인 애니메이션 및 로직 관리.
+*   **터미널 기반 UI:** 클라이언트 측에서 풍부한 터미널 인터페이스를 위해 ncurses 라이브러리 활용.
+*   **시그널 핸들링:** Ctrl+C (SIGINT)를 사용하여 서버와 클라이언트 모두(또는 클라이언트의 게임만) 정상적으로 종료.
 
-*   **언어 (Language):** C
-*   **라이브러리 (Libraries):**
-    *   `ncurses`: 터미널 기반 사용자 인터페이스 (Terminal-based User Interface)
-    *   `pthread`: 멀티스레딩 (Multithreading)
-*   **시스템 콜 (System Calls):** 파일 I/O (`open`, `read`, `write`, `close` 등), 시간 관련 (`sleep`, `usleep`), 프로세스/스레드 관리 등 다양한 시스템 콜이 사용될 수 있습니다. (Various system calls for file I/O, time, process/thread management, etc., may be used.)
+## 🛠 사용 기술
 
-## ⚙️ 시스템 요구사항 (System Requirements)
+*   **언어:** C
+*   **핵심 라이브러리:**
+    *   POSIX Threads (pthreads) - 동시성 처리
+    *   소켓 API (sys/socket.h, arpa/inet.h) - TCP/IP 네트워킹
+    *   Ncurses (ncurses.h) - 터미널 UI (클라이언트 측)
+*   **표준 C 라이브러리:** stdio, stdlib, string, unistd, errno, signal 등
+*   **빌드 시스템:** Makefile
+*   **데이터 영속화:** 일반 텍스트 파일
 
-*   Linux 또는 macOS (Windows의 경우 WSL2 권장)
-*   GCC (GNU Compiler Collection) 또는 Clang
-*   `ncurses` 개발 라이브러리 (`libncurses-dev` 또는 `ncurses-devel`)
-*   `make` (빌드 자동화를 위해)
+## 📁 프로젝트 구조
 
-## 🚀 빌드 및 실행 (Build & Run)
-
-### 1. 저장소 복제 (Clone Repository)
-
-```bash
-git clone git@github.com:7829hw/Rain-Typing-Game.git
-cd rain-typing-game
+```
+rain-typing-game/
+├── client/
+│   ├── src/
+│   │   ├── auth_ui.c
+│   │   ├── client_main.c
+│   │   ├── client_network.c
+│   │   ├── game_logic.c
+│   │   └── leaderboard_ui.c
+│   └── include/
+│       ├── auth_ui.h
+│       ├── client_globals.h
+│       ├── client_network.h
+│       ├── game_logic.h
+│       └── leaderboard_ui.h
+├── server/
+│   ├── src/
+│   │   ├── auth_manager.c
+│   │   ├── db_handler.c
+│   │   ├── score_manager.c
+│   │   ├── server_main.c
+│   │   └── server_network.c
+│   ├── include/
+│   │   ├── auth_manager.h
+│   │   ├── db_handler.h
+│   │   ├── score_manager.h
+│   │   └── server_network.h
+│   └── data/  (서버 실행 시 존재하지 않으면 생성됨)
+│       ├── users.txt
+│       └── scores.txt
+├── common/
+│   └── include/
+│       └── protocol.h
+├── Makefile
+└── readme.md
 ```
 
-### 2. 의존성 설치 (Install Dependencies)
+## 📋 사전 요구 사항
 
-*   **Debian/Ubuntu 기반:**
-    ```bash
-    sudo apt-get update
-    sudo apt-get install libncurses5-dev libncursesw5-dev build-essential
-    ```
-*   **Fedora/RHEL/CentOS 기반:**
-    ```bash
-    sudo dnf install ncurses-devel ncurses-libs make gcc
-    ```
-*   **macOS (Homebrew 사용):**
-    ```bash
-    brew install ncurses
-    # macOS는 보통 기본적으로 개발 도구가 설치되어 있습니다.
-    ```
+*   C 컴파일러 (예: GCC)
+*   Make 빌드 유틸리티
+*   `ncurses` 개발 라이브러리 (예: `libncurses-dev` 또는 `libncurses5-dev` on Debian/Ubuntu, `ncurses-devel` on Fedora/CentOS).
+*   `pthreads` 라이브러리 (일반적으로 C 컴파일러/표준 라이브러리에 포함)
 
-### 3. 빌드 (Build)
+## ⚙️ 컴파일 방법
 
-프로젝트 루트 디렉토리에서 다음 명령어를 실행합니다:
-(Execute the following command in the project root directory:)
+프로젝트 루트 디렉토리에 포함된 `Makefile`을 사용하여 프로젝트를 빌드하고 정리할 수 있습니다. `Makefile`은 클라이언트 빌드 시 표준 `ncurses` 라이브러리 (`-lncurses`)와 링크하도록 설정되어야 합니다.
 
+**빌드:**
+프로젝트 루트 디렉토리에서 터미널을 열고 다음 명령어를 실행하여 클라이언트와 서버 실행 파일을 빌드합니다.
 ```bash
 make
 ```
+이 명령어는 `bin/client`와 `bin/server` 실행 파일을 생성합니다.
 
-또는 `Makefile`이 없다면 직접 컴파일:
-(Or compile directly if there is no `Makefile`:)
-
+**정리:**
+빌드 과정에서 생성된 오브젝트 파일 및 실행 파일을 제거하려면 다음 명령어를 실행합니다.
 ```bash
-gcc -o rain_typing_game -lncurses -lpthread
+make clean
 ```
+이 명령어는 `Makefile`에 정의된 대로 빌드 관련 파일들을 삭제합니다.
 
-### 4. 실행 (Run)
+## ▶️ 애플리케이션 실행 방법
 
-```bash
-./rain_typing_game
-```
+1.  **서버 시작:**
+    터미널을 열고 프로젝트 루트 디렉토리로 이동한 후 다음을 실행합니다:
+    ```bash
+    ./bin/server
+    ```
+    서버가 시작되고 8080 포트에서 클라이언트 연결을 기다립니다. `server/data/` 디렉토리와 그 안의 파일들(`users.txt`, `scores.txt`)은 존재하지 않으면 이 단계에서 생성됩니다.
 
-## 룰 및 게임플레이 (Rules & Gameplay)
+2.  **클라이언트 시작:**
+    *새로운* 터미널을 열고 프로젝트 루트 디렉토리로 이동한 후 다음을 실행합니다:
+    ```bash
+    ./bin/client
+    ```
+    클라이언트 애플리케이션이 터미널에서 실행됩니다.
 
-1.  **로그인 (Login):** 게임을 시작하면 사용자 이름을 입력하라는 메시지가 표시됩니다. 기존 사용자이거나 새 사용자일 수 있습니다.
-2.  **게임 시작 (Start Game):** 로그인 후, 메인 메뉴에서 '게임 시작'을 선택합니다.
-3.  **단어 입력 (Type Words):** 단어들이 화면 상단에서 떨어지기 시작합니다. 현재 입력해야 할 활성 단어(예: 가장 먼저 입력해야 하거나, 특정 색상으로 강조된 단어)가 표시될 수 있습니다.
-4.  **단어 제거 (Eliminate Words):** 단어를 정확히 입력하고 `Enter` 키(또는 스페이스바, 게임 설계에 따라 다름)를 누르면 해당 단어가 사라지고 점수를 얻습니다.
-5.  **생명 감소 (Lose Life):** 단어가 화면 바닥에 닿으면 생명(Life)이 하나 줄어듭니다.
-6.  **게임 오버 (Game Over):** 모든 생명을 잃으면 게임이 종료됩니다.
-7.  **리더보드 확인 (Check Leaderboard):** 게임 종료 후 또는 메인 메뉴에서 리더보드를 선택하여 최고 점수들을 확인할 수 있습니다.
+## 🧑‍💻 플레이 방법 (클라이언트 UI)
 
-## 💡 향후 개선 사항 (Future Enhancements)
+1.  **인증:**
+    *   시작하면 인증 메뉴가 나타납니다:
+        *   `1. 로그인`: 기존 계정이 있는 경우.
+        *   `2. 회원가입`: 새 계정을 만드는 경우.
+        *   `3. 종료`: 클라이언트 애플리케이션을 종료합니다.
+    *   선택을 입력합니다. 로그인/회원가입 시 ID와 비밀번호를 묻습니다.
+2.  **메인 메뉴 (로그인 후):**
+    *   `1. 게임 시작`: 새 게임 세션을 시작합니다.
+    *   `2. 리더보드 보기`: 서버의 현재 상위 점수를 보여줍니다.
+    *   `3. 로그아웃`: 로그아웃하고 인증 메뉴로 돌아갑니다.
+    *   `4. 게임 종료`: 클라이언트 애플리케이션을 종료합니다.
+3.  **게임 플레이:**
+    *   단어들이 위에서부터 떨어지기 시작합니다.
+    *   화면에 나타나는 단어를 화면 하단의 "Input:" 필드에 그대로 입력합니다.
+    *   `Enter` 또는 `Space` 키를 눌러 입력한 단어를 제출합니다.
+    *   정확하면 단어가 사라지고 점수를 얻습니다.
+    *   단어가 바닥에 닿으면 생명력을 잃습니다.
+    *   점수가 증가하면 게임 속도가 빨라집니다(단어 낙하 속도 증가).
+    *   생명력을 모두 잃거나 `Ctrl+C`를 누르면 게임이 종료됩니다.
+4.  **종료:**
+    *   게임 플레이 중 `Ctrl+C`를 누르면 현재 게임이 종료되고 메인 메뉴로 돌아갑니다 (점수가 표시되고 제출 여부를 묻습니다).
+    *   대부분의 메뉴나 프롬프트에서 `Ctrl+C`를 누르면 클라이언트 애플리케이션을 정상적으로 종료하려고 시도합니다.
+    *   서버는 해당 터미널 창에서 `Ctrl+C`를 눌러 종료할 수 있습니다.
 
-*   **난이도 조절 (Difficulty Levels):** 단어 떨어지는 속도, 단어 길이 등을 조절.
-*   **다양한 단어 목록 (Various Word Lists):** 주제별 또는 언어별 단어 목록 선택 기능.
-*   **특수 효과/아이템 (Special Effects/Items):** 게임 플레이에 영향을 주는 아이템 (예: 시간 느리게, 모든 단어 제거).
-*   **보다 정교한 UI (More Sophisticated UI):** 색상, 애니메이션 등 개선.
+## 💡 알려진 한계점 / 향후 개선 사항
+
+*   **비밀번호 보안:** 현재 비밀번호는 평문으로 저장 및 전송됩니다. 해싱을 구현해야 합니다.
+*   **데이터 영속화:** 간단한 텍스트 파일을 사용합니다. 서버에는 더 강력한 데이터베이스(예: SQLite)를 사용할 수 있습니다.
+*   **게임 복잡성:**
+    *   단어 목록이 정적입니다. 파일에서 로드하거나 확장할 수 있습니다.
+    *   난이도 조절이 기본적입니다. 더 다양한 단어 길이 또는 생성 속도를 포함할 수 있습니다.
+    *   특별한 아이템이나 파워업이 없습니다.
