@@ -1,95 +1,102 @@
 // client/src/auth_ui.c
-
 #include "auth_ui.h"
 
+#include <ctype.h>
 #include <ncursesw/curses.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "network_client.h"
+#include "client_globals.h"
+#include "client_network.h"  // 변경: network_client.h -> client_network.h
 #include "protocol.h"
+
+// Forward declaration for helper from client_main.c
+void wait_for_key_or_signal(int y, int x, const char* prompt);
 
 void draw_auth_menu() {
   clear();
-  mvprintw(3, 10, "=== Welcome to Rain Typing Game ===");
-  mvprintw(5, 10, "1. Login");
-  mvprintw(6, 10, "2. Register");
-  mvprintw(7, 10, "3. Exit");
-  mvprintw(9, 10, "Select an option: ");
+  mvprintw(Y_TITLE, X_DEFAULT_POS, "=== Welcome to Rain Typing Game ===");
+  mvprintw(Y_OPTIONS_START, X_DEFAULT_POS, "1. Login");
+  mvprintw(Y_OPTIONS_START + 1, X_DEFAULT_POS, "2. Register");
+  mvprintw(Y_OPTIONS_START + 2, X_DEFAULT_POS, "3. Exit");
+  mvprintw(Y_OPTIONS_START + 4, X_DEFAULT_POS, "Select an option: ");
   refresh();
 }
 
-void input_plain(const char* label, char* buffer, int max_len) {
-  // ID 입력은 11행을 사용한다고 가정
-  int current_y = 11;
-  int label_x = 10;
-
-  // (선택적 개선) 입력을 시작하기 전에, 해당 라인을 깨끗하게 만들 수 있습니다.
-  // move(current_y, label_x); // 레이블 시작 위치로 이동
-  // clrtoeol();               // 거기서부터 라인 끝까지 지움
-
-  echo();                                       // 일반 입력이므로 화면에 보이도록 설정
-  mvprintw(current_y, label_x, "%s: ", label);  // 레이블 출력
-  // getnstr은 현재 커서 위치에서 입력을 받습니다.
-  // mvprintw 실행 후 커서는 레이블 문자열 바로 뒤에 위치합니다.
-  refresh();  // 레이블을 즉시 화면에 표시
-
-  getnstr(buffer, max_len - 1);
-  buffer[max_len - 1] = '\0';  // Ensure null termination
-  noecho();                    // 입력 완료 후 echo 끄기
-
-  // 입력 후, 커서는 입력된 문자열 바로 뒤에 있습니다.
-  // 그 위치부터 라인 끝까지 지웁니다. (ID 입력값 뒤의 불필요한 잔상 제거)
-  // 이 clrtoeol()은 ID 입력값 자체를 지우는 것이 아니라, 그 '뒤'를 지웁니다.
-  // 예를 들어 "ID: user123" 입력 후 이 clrtoeol()은 "user123" 뒤부터 지웁니다.
-  clrtoeol();
-  refresh();  // 지운 결과를 화면에 반영
-}
-
-void input_password(const char* label, char* buffer, int max_len) {
-  // 비밀번호 입력도 ID와 동일한 11행을 사용한다고 가정
-  int current_y = 11;
-  int label_x = 10;
-  // 실제 비밀번호 문자('*')가 입력될 시작 X 좌표
-  int input_start_x = label_x + strlen(label) + 2;  // "PW: " 바로 다음 칸
+// Custom input function that handles SIGINT and ncurses timeout
+static int custom_get_string(const char* label, char* buffer, int max_len, bool is_password) {
+  int current_y = Y_INPUT_FIELD;
+  int label_x = X_DEFAULT_POS;
+  int input_start_x = label_x + strlen(label) + 2;  // "ID: " or "PW: "
   int ch, i = 0;
 
-  // 1. "PW: " 레이블을 출력합니다.
-  //    이때, 이전에 있던 "ID: " 레이블 위에 겹쳐 써집니다.
-  mvprintw(current_y, label_x, "%s: ", label);
+  buffer[0] = '\0';  // Clear buffer initially
 
-  // 2. (핵심 수정) 실제 비밀번호 문자 ('*')를 입력받기 시작할 위치(input_start_x)로 커서를 이동시키고,
-  //    그 위치부터 라인의 끝까지를 깨끗하게 지웁니다.
-  //    이렇게 하면 'input_plain'에서 ID를 입력했을 때 남아있을 수 있는 모든 잔상이 제거됩니다.
+  if (!is_password) {
+    echo();  // Turn on echo for normal input
+  }  // noecho() is default from main_client settings, and for password
+
+  // Print label and clear rest of the input line
+  mvprintw(current_y, label_x, "%s: ", label);
   move(current_y, input_start_x);
   clrtoeol();
-  // clrtoeol() 후 커서는 input_start_x에 그대로 있으므로, 다시 move할 필요는 없습니다.
+  refresh();
 
-  noecho();  // 비밀번호 입력이므로 화면에 보이지 않도록 설정
+  while (i < max_len - 1) {
+    if (sigint_received) {
+      if (!is_password) noecho();  // Restore noecho if it was turned on
+      return -1;                   // Interrupted
+    }
 
-  // 3. 비밀번호 입력 루프
-  while ((ch = getch()) != '\n' && ch != KEY_ENTER && i < max_len - 1) {
-    if (ch == KEY_BACKSPACE || ch == 127 || ch == '\b') {  // 백스페이스 처리
+    ch = getch();  // Relies on global timeout(100)
+
+    if (ch == ERR) {  // Timeout or no input
+      continue;
+    }
+
+    if (ch == '\n' || ch == KEY_ENTER) {
+      break;  // End of input
+    } else if (ch == KEY_BACKSPACE || ch == 127 || ch == '\b') {
       if (i > 0) {
         i--;
-        buffer[i] = '\0';
-        // 현재 '*'가 찍힌 위치를 공백으로 덮고, 커서를 한 칸 뒤로 이동
+        // Move cursor, print space, move cursor back
         mvaddch(current_y, input_start_x + i, ' ');
         move(current_y, input_start_x + i);
       }
-    } else if (ch >= 32 && ch <= 126) {  // 화면에 표시 가능한 문자일 경우
+    } else if (isprint(ch)) {  // Process printable characters
       buffer[i++] = ch;
-      mvaddch(current_y, input_start_x + i - 1, '*');  // '*' 문자로 마스킹하여 출력
+      if (is_password) {
+        mvaddch(current_y, input_start_x + i - 1, '*');
+      } else {  // Normal echo handled by ncurses echo()
+        mvaddch(current_y, input_start_x + i - 1, ch);
+      }
     }
-    refresh();  // 각 문자 입력/삭제 시 화면 즉시 갱신
+    refresh();  // Refresh after each character
   }
-  buffer[i] = '\0';  // 문자열 null 종단
+  buffer[i] = '\0';  // Null-terminate
 
-  // (선택적) 입력 완료 후, 마지막 '*' 문자 뒤부터 라인 끝까지 정리할 수 있습니다.
-  // 이렇게 하면 비밀번호 입력란 뒤에 혹시 다른 문자가 있었다면 지워집니다.
+  if (!is_password) {
+    noecho();  // Restore noecho if it was turned on for plain input
+  }
+
+  // Clear from end of input to end of line
   move(current_y, input_start_x + i);
   clrtoeol();
-  refresh();  // 정리 결과를 화면에 반영
+  refresh();
+
+  return 0;  // Success
+}
+
+void input_plain(const char* label, char* buffer, int max_len) {
+  if (custom_get_string(label, buffer, max_len, false) == -1) {
+    // SIGINT was received during input, auth_ui_main will check global flag
+  }
+}
+
+void input_password(const char* label, char* buffer, int max_len) {
+  if (custom_get_string(label, buffer, max_len, true) == -1) {
+    // SIGINT was received during input, auth_ui_main will check global flag
+  }
 }
 
 int auth_ui_main(char* logged_in_user) {
@@ -97,67 +104,83 @@ int auth_ui_main(char* logged_in_user) {
   int choice_char;
   int choice;
 
+  logged_in_user[0] = '\0';  // Ensure logged_in_user is clean
+
   while (1) {
+    if (sigint_received) return AUTH_UI_EXIT_SIGNAL;
+
     draw_auth_menu();
     choice_char = getch();
+
+    if (choice_char == ERR) {  // Timeout, no input
+      if (sigint_received) return AUTH_UI_EXIT_SIGNAL;
+      continue;
+    }
 
     if (choice_char >= '1' && choice_char <= '3') {
       choice = choice_char - '0';
     } else {
-      choice = -1;
+      choice = -1;  // Invalid
     }
 
-    if (choice == 3) return 0;         // Exit
-    if (choice != 1 && choice != 2) {  // Invalid option
-      mvprintw(13, 10, "Invalid option. Please try again.");
+    if (choice == 3) return AUTH_UI_EXIT_NORMAL;  // User chose 'Exit'
+    if (choice != 1 && choice != 2) {
+      mvprintw(Y_STATUS_MSG, X_DEFAULT_POS, "Invalid option. Please try again.");
       clrtoeol();
-      refresh();
-      getch();
+      wait_for_key_or_signal(Y_STATUS_MSG + Y_MSG_OFFSET1, X_DEFAULT_POS, "");  // Just waits
+      if (sigint_received) return AUTH_UI_EXIT_SIGNAL;
       continue;
     }
 
-    clear();  // 메뉴 화면 지우고 입력 화면 준비
-    mvprintw(3, 10, (choice == 1) ? "=== LOGIN ===" : "=== REGISTER ===");
+    clear();
+    mvprintw(Y_TITLE, X_DEFAULT_POS, (choice == 1) ? "=== LOGIN ===" : "=== REGISTER ===");
 
-    // ID 입력 (11행 사용)
     input_plain("ID", id, MAX_ID_LEN);
+    if (sigint_received) return AUTH_UI_EXIT_SIGNAL;  // Check after input_plain
 
-    // PW 입력 (11행 재사용)
-    // input_password 함수 내부에서 이전 잔상을 정리하므로, 여기서는 특별한 조치 필요 없음
     input_password("PW", pw, MAX_PW_LEN);
+    if (sigint_received) return AUTH_UI_EXIT_SIGNAL;  // Check after input_password
 
-    mvprintw(13, 10, "Processing...");  // 처리 중 메시지
-    clrtoeol();                         // 메시지 뒤쪽 정리
+    mvprintw(Y_STATUS_MSG, X_DEFAULT_POS, "Processing...");
+    clrtoeol();
     refresh();
+
+    char response_message_buffer[MAX_MSG_LEN * 2];  // For combined messages
 
     if (choice == 1) {  // Login
       LoginResponse res;
       int ret = send_login_request(id, pw, &res);
+      if (sigint_received) return AUTH_UI_EXIT_SIGNAL;
+
       if (ret == 0 && res.success) {
-        strcpy(logged_in_user, id);
-        mvprintw(13, 10, "Login Success! User: %s. Press any key...", res.message);
+        strncpy(logged_in_user, id, MAX_ID_LEN - 1);
+        logged_in_user[MAX_ID_LEN - 1] = '\0';
+        snprintf(response_message_buffer, sizeof(response_message_buffer), "Login Success! %s", res.message);
+        mvprintw(Y_STATUS_MSG, X_DEFAULT_POS, "%s", response_message_buffer);
         clrtoeol();
-        refresh();
-        getch();
-        return 1;  // 로그인 성공
+        wait_for_key_or_signal(Y_STATUS_MSG + Y_MSG_OFFSET1, X_DEFAULT_POS, "Press any key...");
+        if (sigint_received) return AUTH_UI_EXIT_SIGNAL;
+        return AUTH_UI_LOGIN_SUCCESS;
       } else {
-        mvprintw(13, 10, "Login Failed: %s (ret: %d)", (ret != 0 ? "Network/Comm error" : res.message), ret);
+        snprintf(response_message_buffer, sizeof(response_message_buffer), "Login Failed: %s (ret: %d)",
+                 (ret != 0 ? "Network/Comm error" : res.message), ret);
       }
     } else if (choice == 2) {  // Register
       RegisterResponse res;
       int ret = send_register_request(id, pw, &res);
+      if (sigint_received) return AUTH_UI_EXIT_SIGNAL;
+
       if (ret == 0 && res.success) {
-        mvprintw(13, 10, "Register Success! %s Try logging in.", res.message);
+        snprintf(response_message_buffer, sizeof(response_message_buffer), "Register Success! %s Try logging in.", res.message);
       } else {
-        mvprintw(13, 10, "Register Failed: %s (ret: %d)", (ret != 0 ? "Network/Comm error" : res.message), ret);
+        snprintf(response_message_buffer, sizeof(response_message_buffer), "Register Failed: %s (ret: %d)",
+                 (ret != 0 ? "Network/Comm error" : res.message), ret);
       }
     }
 
-    // 결과 메시지 뒤쪽 정리 및 다음 입력 대기
+    mvprintw(Y_STATUS_MSG, X_DEFAULT_POS, "%s", response_message_buffer);
     clrtoeol();
-    refresh();
-    mvprintw(14, 10, "Press any key to continue...");
-    refresh();
-    getch();
+    wait_for_key_or_signal(Y_STATUS_MSG + Y_MSG_OFFSET1, X_DEFAULT_POS, "Press any key to continue...");
+    if (sigint_received) return AUTH_UI_EXIT_SIGNAL;
   }
 }
