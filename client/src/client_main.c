@@ -1,6 +1,6 @@
 // client/src/client_main.c
 #include <locale.h>
-#include <ncursesw/curses.h>
+#include <ncurses.h>
 #include <signal.h>
 #include <stdbool.h>  // For bool type
 #include <stdio.h>

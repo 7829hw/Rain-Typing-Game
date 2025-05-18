@@ -1,7 +1,6 @@
 // client/src/game_logic.c
 #include "game_logic.h"
 
-#include <locale.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -266,7 +265,6 @@ int run_rain_typing_game(const char *user_id) {
   current_input_buffer[0] = '\0';
   memset(words, 0, sizeof(words));
 
-  setlocale(LC_ALL, "");
   srand(time(NULL));
 
   nodelay(stdscr, TRUE);  // Non-blocking input for game loop

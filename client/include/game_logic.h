@@ -2,7 +2,7 @@
 #ifndef GAME_LOGIC_H
 #define GAME_LOGIC_H
 
-#include <ncursesw/curses.h>
+#include <ncurses.h>
 #include <pthread.h>
 
 #define MAX_WORDS 20

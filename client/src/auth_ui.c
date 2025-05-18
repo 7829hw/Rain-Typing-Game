@@ -2,7 +2,7 @@
 #include "auth_ui.h"
 
 #include <ctype.h>
-#include <ncursesw/curses.h>
+#include <ncurses.h>
 #include <stdlib.h>
 #include <string.h>
 

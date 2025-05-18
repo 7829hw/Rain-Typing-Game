@@ -1,7 +1,7 @@
 // client/src/leaderboard_ui.c
 #include "leaderboard_ui.h"
 
-#include <ncursesw/curses.h>
+#include <ncurses.h>
 
 #include "client_globals.h"
 #include "client_network.h"  // 변경: network_client.h -> client_network.h
