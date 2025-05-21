@@ -8,13 +8,88 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #include "auth_manager.h"
 #include "protocol.h"
 #include "score_manager.h"
 #include "word_manager.h"
 
-// extern volatile sig_atomic_t server_shutdown_requested; // from server_main.c
+// 로그인된 사용자 관리 구조체
+typedef struct {
+    char username[MAX_ID_LEN];
+    int client_sock;
+    bool is_active;
+} LoggedInUser;
+
+#define MAX_LOGGED_IN_USERS 100
+static LoggedInUser logged_in_users[MAX_LOGGED_IN_USERS];
+static pthread_mutex_t logged_in_users_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// 사용자가 이미 로그인되어 있는지 확인하는 함수
+static int is_user_already_logged_in(const char* username) {
+    int result = -1;
+    pthread_mutex_lock(&logged_in_users_mutex);
+    for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
+        if (logged_in_users[i].is_active && strcmp(logged_in_users[i].username, username) == 0) {
+            result = i;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&logged_in_users_mutex);
+    return result;
+}
+
+// 사용자를 로그인 목록에 추가하는 함수
+static int add_logged_in_user(const char* username, int client_sock) {
+    int result = 0;
+    pthread_mutex_lock(&logged_in_users_mutex);
+    for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
+        if (!logged_in_users[i].is_active) {
+            strncpy(logged_in_users[i].username, username, MAX_ID_LEN - 1);
+            logged_in_users[i].username[MAX_ID_LEN - 1] = '\0';
+            logged_in_users[i].client_sock = client_sock;
+            logged_in_users[i].is_active = true;
+            result = 1;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&logged_in_users_mutex);
+    return result;
+}
+
+// 사용자를 로그인 목록에서 제거하는 함수
+static void remove_logged_in_user(const char* username) {
+    pthread_mutex_lock(&logged_in_users_mutex);
+    for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
+        if (logged_in_users[i].is_active && strcmp(logged_in_users[i].username, username) == 0) {
+            logged_in_users[i].is_active = false;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&logged_in_users_mutex);
+}
+
+// 클라이언트 소켓으로 로그인된 사용자를 제거하는 함수
+static void remove_logged_in_user_by_sock(int client_sock) {
+    pthread_mutex_lock(&logged_in_users_mutex);
+    for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
+        if (logged_in_users[i].is_active && logged_in_users[i].client_sock == client_sock) {
+            logged_in_users[i].is_active = false;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&logged_in_users_mutex);
+}
+
+// 서버 시작 시 로그인 사용자 목록 초기화
+void init_logged_in_users() {
+    pthread_mutex_lock(&logged_in_users_mutex);
+    for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
+        logged_in_users[i].is_active = false;
+    }
+    pthread_mutex_unlock(&logged_in_users_mutex);
+}
 
 void* handle_client(void* arg) {
   int client_sock = *((int*)arg);
@@ -65,11 +140,28 @@ void* handle_client(void* arg) {
       case MSG_TYPE_LOGIN_REQ: {
         LoginRequest* req = (LoginRequest*)(buffer + sizeof(MessageHeader));
         LoginResponse resp_data;
-        resp_data.success = login_user_impl(req->username, req->password, resp_data.message, current_user);
-        if (resp_data.success) {
-          printf("[SERVER_NETWORK] User '%s' logged in on socket %d.\n", current_user, client_sock);
+        
+        // 이미 로그인된 사용자인지 확인
+        if (is_user_already_logged_in(req->username) != -1) {
+          resp_data.success = 0;
+          strncpy(resp_data.message, "이 ID는 이미 다른 세션에서 로그인 중입니다.", MAX_MSG_LEN - 1);
+          resp_data.message[MAX_MSG_LEN - 1] = '\0';
         } else {
-          current_user[0] = '\0';
+          resp_data.success = login_user_impl(req->username, req->password, resp_data.message, current_user);
+          if (resp_data.success) {
+            // 로그인 성공 시 목록에 추가
+            if (!add_logged_in_user(current_user, client_sock)) {
+              // 로그인 목록에 추가 실패 (목록이 꽉 참)
+              resp_data.success = 0;
+              strncpy(current_user, "", MAX_ID_LEN);
+              strncpy(resp_data.message, "서버 로그인 제한에 도달했습니다. 나중에 다시 시도하세요.", MAX_MSG_LEN - 1);
+              resp_data.message[MAX_MSG_LEN - 1] = '\0';
+            } else {
+              printf("[SERVER_NETWORK] User '%s' logged in on socket %d.\n", current_user, client_sock);
+            }
+          } else {
+            current_user[0] = '\0';
+          }
         }
         resp_header.type = MSG_TYPE_LOGIN_RESP;
         response_data_len = sizeof(LoginResponse);
@@ -121,6 +213,8 @@ void* handle_client(void* arg) {
         LogoutResponse resp_data;
         if (strlen(current_user) > 0) {
           printf("[SERVER_NETWORK] User %s logged out from socket %d.\n", current_user, client_sock);
+          // 로그인 목록에서 제거
+          remove_logged_in_user(current_user);
           memset(current_user, 0, sizeof(current_user));
           resp_data.success = 1;
           strncpy(resp_data.message, "Logged out successfully.", MAX_MSG_LEN - 1);
@@ -161,9 +255,12 @@ void* handle_client(void* arg) {
     }
   }
 
+  // 연결 종료 처리 부분(함수 끝부분)
   if (strlen(current_user) > 0) {
-    printf("[SERVER_NETWORK] Cleaning up session for user %s on socket %d due to disconnect/error.\n", current_user, client_sock);
-  }
+  printf("[SERVER_NETWORK] Cleaning up session for user %s on socket %d due to disconnect/error.\n", current_user, client_sock);
+  // 로그인 목록에서 제거
+  remove_logged_in_user(current_user);
+}
   close(client_sock);
   return NULL;
 }

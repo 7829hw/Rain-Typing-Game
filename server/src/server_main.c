@@ -78,6 +78,8 @@ int main() {
       fprintf(stderr, "[SERVER] data/words.txt load failed\n");
       exit(EXIT_FAILURE);
   }
+  extern void init_logged_in_users();
+  init_logged_in_users();
   init_auth_system();
   init_score_system();
 
