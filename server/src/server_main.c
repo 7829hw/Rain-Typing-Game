@@ -12,6 +12,7 @@
 #include "db_handler.h"
 #include "score_manager.h"
 #include "server_network.h"  // 변경: network_server.h -> server_network.h
+#include "word_manager.h"
 
 #define PORT 8080
 #define MAX_CLIENTS 10
@@ -69,7 +70,14 @@ int main() {
   printf("Rain Typing Game Server started on port %d...\n", PORT);
   printf("Press Ctrl+C to shut down the server.\n");
 
-  init_db_files();
+  /* ① users.txt·scores.txt를 만들면서 data/ 폴더가 존재하도록 만듦 */
+  init_db_files();               /* DATA_DIR_PATH == "data" */  
+
+  /* ② 이제 data/words.txt 를 읽어 들임 */
+  if (load_wordlist_from_file("data/words.txt") <= 0) {
+      fprintf(stderr, "[SERVER] data/words.txt load failed\n");
+      exit(EXIT_FAILURE);
+  }
   init_auth_system();
   init_score_system();
 

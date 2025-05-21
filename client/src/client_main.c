@@ -9,61 +9,42 @@
 #include "auth_ui.h"
 #include "client_globals.h"
 #include "client_network.h"
-#include "game_logic.h"
+#include "game_logic.h"   /* COLOR_PAIR_* 매크로 사용 */
 #include "leaderboard_ui.h"
 #include "protocol.h"
 
-#define SERVER_IP "127.0.0.1"
+#define SERVER_IP   "127.0.0.1"
 #define SERVER_PORT 8080
 
-volatile sig_atomic_t sigint_received = 0;
-volatile sig_atomic_t sigint_game_exit_requested = 0;  // New flag for game-specific exit
-bool is_game_running = false;                          // Flag to indicate game state for SIGINT handler
+volatile sig_atomic_t sigint_received            = 0;
+volatile sig_atomic_t sigint_game_exit_requested = 0;
+bool                  is_game_running            = false;
 
-void handle_sigint(int sig) {
+static void handle_sigint(int sig) {
   (void)sig;
-  if (is_game_running) {
-    sigint_game_exit_requested = 1;  // Request to exit only the game
-  } else {
-    sigint_received = 1;  // Request to exit the entire application
-  }
+  if (is_game_running) sigint_game_exit_requested = 1;
+  else                 sigint_received = 1;
 }
 
-void wait_for_key_or_signal(int y, int x, const char* prompt) {
-  mvprintw(y, x, "%s", prompt);
-  clrtoeol();
-  refresh();
-  int key;
-  do {
-    if (sigint_game_exit_requested || sigint_received) break;
-    key = getch();
-  } while (key == ERR);
+void wait_for_key_or_signal(int y,int x,const char* prompt) {
+  mvprintw(y,x,"%s",prompt); clrtoeol(); refresh();
+  int key; do { if (sigint_game_exit_requested||sigint_received) break; key=getch(); } while(key==ERR);
 }
 
-void init_ncurses_settings() {
+static void init_ncurses_settings(void) {
   setlocale(LC_ALL, "");
-  initscr();
-  cbreak();
-  noecho();
-  keypad(stdscr, TRUE);
-  curs_set(0);
-  timeout(-1);  // Blocking mode by default to avoid flicker
-
+  initscr(); cbreak(); noecho(); keypad(stdscr,TRUE); curs_set(0); timeout(-1);
   if (has_colors()) {
     start_color();
+    init_pair(COLOR_PAIR_KILL,  COLOR_RED,  COLOR_BLACK);
+    init_pair(COLOR_PAIR_BONUS, COLOR_BLUE, COLOR_BLACK);
   }
 }
 
-void end_ncurses_settings() { endwin(); }
+static void end_ncurses_settings(void){ endwin(); }
 
-void perform_cleanup_and_exit(int exit_code, const char* exit_msg) {
-  is_game_running = false;
-  disconnect_from_server();
-  end_ncurses_settings();
-  if (exit_msg) {
-    printf("%s\n", exit_msg);
-  }
-  exit(exit_code);
+static void perform_cleanup_and_exit(int code,const char* msg){
+  is_game_running=false; disconnect_from_server(); end_ncurses_settings(); if(msg) printf("%s\n",msg); exit(code);
 }
 
 int main() {
@@ -131,6 +112,25 @@ int main() {
             is_game_running = true;
             clear();
             refresh();
+            /* 단어 리스트가 아직 없으면 서버에서 받아옴 */
+            if (dynamic_word_list == NULL) {
+                WordListResponse wresp;
+                if (send_wordlist_request(&wresp) != 0 || wresp.count <= 0) {
+                    mvprintw(Y_STATUS_MSG, X_DEFAULT_POS,
+                            "Failed to load word list from server.");
+                    wait_for_key_or_signal(Y_STATUS_MSG+2, X_DEFAULT_POS,
+                                          "Press any key...");
+                    break;               /* 메뉴로 복귀 */
+                }
+                dynamic_word_count = wresp.count;
+                dynamic_word_list  = malloc(sizeof(char*)*wresp.count);
+                for (int i=0;i<wresp.count;++i)
+                    dynamic_word_list[i] = strdup(wresp.words[i]);
+            }
+
+            is_game_running = true;
+            clear(); refresh();
+
             int final_score = run_rain_typing_game(user_id);
             is_game_running = false;
 

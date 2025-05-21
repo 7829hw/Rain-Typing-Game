@@ -51,8 +51,8 @@ static int send_request_and_receive_response(MessageType type, const void* reque
   }
   if (sigint_received) return -10;
 
-  char send_buffer[1024];
-  char recv_buffer[1024];
+  char send_buffer[40960];
+  char recv_buffer[40960];
 
   MessageHeader req_header;
   req_header.type = type;
@@ -148,4 +148,13 @@ int send_leaderboard_request(LeaderboardResponse* response) {
 
 int send_logout_request(LogoutResponse* response) {
   return send_request_and_receive_response(MSG_TYPE_LOGOUT_REQ, NULL, 0, MSG_TYPE_LOGOUT_RESP, response, sizeof(LogoutResponse));
+}
+
+int send_wordlist_request(WordListResponse* resp)
+{
+    return send_request_and_receive_response(
+        MSG_TYPE_WORDLIST_REQ,
+        NULL, 0,
+        MSG_TYPE_WORDLIST_RESP,
+        resp, sizeof(WordListResponse));
 }

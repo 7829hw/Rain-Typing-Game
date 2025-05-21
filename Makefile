@@ -1,155 +1,112 @@
-CC = gcc
+###############################################################################
+# Rain-Typing-Game  ──  unified Makefile
+#  * 빌드 결과
+#       bin/rain_client      ← ncurses 클라이언트
+#       bin/rain_server      ← TCP 서버
+###############################################################################
 
-# Directories - 최상단에 정의
-COMMON_INCLUDE_DIR = common/include
-BIN_DIR = bin
-OBJ_BASE_DIR = obj
-DATA_DIR = data
+# ───── 공통 ────────────────────────────────────────────────────────────────────
+CC       := gcc
+CFLAGS   := -Wall -Wextra -g -O2 \
+			-Wno-stringop-truncation
+LDFLAGS  :=
+LIBS     := -lpthread
 
-# --- Client Configuration --- - 최상단에 정의
-CLIENT_SRC_DIR = client/src
-CLIENT_INCLUDE_DIR = client/include
+COMMON_INC := common/include
+CLIENT_INC := client/include
+SERVER_INC := server/include
 
-# --- Server Configuration --- - 최상단에 정의
-SERVER_SRC_DIR = server/src
-SERVER_INCLUDE_DIR = server/include
+OBJ_DIR := obj
+BIN_DIR := bin
 
-# Common Headers - 의존하는 변수 정의 이후
-COMMON_PROTOCOL_H = $(COMMON_INCLUDE_DIR)/protocol.h
+# 빌드 디렉터리 생성
+$(shell mkdir -p $(OBJ_DIR)/client $(OBJ_DIR)/server $(BIN_DIR))
 
-# Client Specific Headers - 의존하는 변수 정의 이후
-CLIENT_GLOBALS_H = $(CLIENT_INCLUDE_DIR)/client_globals.h
-CLIENT_NETWORK_H = $(CLIENT_INCLUDE_DIR)/client_network.h
+# ───── 클라이언트 ─────────────────────────────────────────────────────────────
+CLIENT_SRC := \
+    client/src/client_main.c \
+    client/src/auth_ui.c \
+    client/src/leaderboard_ui.c \
+    client/src/client_network.c \
+    client/src/game_logic.c
 
-# Server Specific Headers - 의존하는 변수 정의 이후
-SERVER_AUTH_MANAGER_H = $(SERVER_INCLUDE_DIR)/auth_manager.h
-SERVER_NETWORK_H = $(SERVER_INCLUDE_DIR)/server_network.h
+CLIENT_OBJS := $(patsubst client/src/%.c,$(OBJ_DIR)/client/%.o,$(CLIENT_SRC))
+CLIENT_CFLAGS := $(CFLAGS) -I$(CLIENT_INC) -I$(COMMON_INC) \
+                 $(shell pkg-config --cflags ncursesw 2>/dev/null)
+CLIENT_LIBS   := $(if $(shell pkg-config --libs ncursesw 2>/dev/null), \
+                    $(shell pkg-config --libs ncursesw), -lncursesw) -lpthread
+CLIENT_BIN    := $(BIN_DIR)/rain_client
 
+# ───── 서버 ───────────────────────────────────────────────────────────────────
+SERVER_SRC := \
+    server/src/server_main.c \
+    server/src/server_network.c \
+    server/src/auth_manager.c \
+    server/src/score_manager.c \
+    server/src/db_handler.c \
+    server/src/word_manager.c
 
-# Client Build Config - 의존하는 변수 정의 이후
-CLIENT_OBJ_DIR = $(OBJ_BASE_DIR)/client
-CLIENT_TARGET_NAME = rain_client
-CLIENT_TARGET = $(BIN_DIR)/$(CLIENT_TARGET_NAME)
-NCURSES_CFLAGS_CMD = $(shell pkg-config --cflags ncursesw 2>/dev/null)
-NCURSES_LIBS_CMD = $(shell pkg-config --libs ncursesw 2>/dev/null)
-CLIENT_EXTRA_CFLAGS = $(if $(NCURSES_CFLAGS_CMD),$(NCURSES_CFLAGS_CMD),-I/usr/include/ncursesw)
-CLIENT_EXTRA_LIBS = $(if $(NCURSES_LIBS_CMD),$(NCURSES_LIBS_CMD),-lncurses)
-CLIENT_CFLAGS = -Wall -Wextra -g -I$(CLIENT_INCLUDE_DIR) -I$(COMMON_INCLUDE_DIR) $(CLIENT_EXTRA_CFLAGS)
-CLIENT_LDFLAGS =
-CLIENT_LIBS = $(CLIENT_EXTRA_LIBS) -lpthread
-CLIENT_SRCS_NAMES = client_main.c auth_ui.c leaderboard_ui.c client_network.c game_logic.c
-CLIENT_SRCS = $(addprefix $(CLIENT_SRC_DIR)/, $(CLIENT_SRCS_NAMES))
-CLIENT_OBJS = $(patsubst $(CLIENT_SRC_DIR)/%.c, $(CLIENT_OBJ_DIR)/%.o, $(CLIENT_SRCS))
+SERVER_OBJS := $(patsubst server/src/%.c,$(OBJ_DIR)/server/%.o,$(SERVER_SRC))
+SERVER_CFLAGS := $(CFLAGS) -I$(SERVER_INC) -I$(COMMON_INC)
+SERVER_BIN    := $(BIN_DIR)/rain_server
 
-# Server Build Config - 의존하는 변수 정의 이후
-SERVER_OBJ_DIR = $(OBJ_BASE_DIR)/server
-SERVER_TARGET_NAME = rain_server
-SERVER_TARGET = $(BIN_DIR)/$(SERVER_TARGET_NAME)
-SERVER_CFLAGS = -Wall -Wextra -g -I$(SERVER_INCLUDE_DIR) -I$(COMMON_INCLUDE_DIR) -pthread
-SERVER_LDFLAGS =
-SERVER_LIBS = -lpthread
-SERVER_SRCS_NAMES = server_main.c server_network.c auth_manager.c score_manager.c db_handler.c
-SERVER_SRCS = $(addprefix $(SERVER_SRC_DIR)/, $(SERVER_SRCS_NAMES))
-SERVER_OBJS = $(patsubst $(SERVER_SRC_DIR)/%.c, $(SERVER_OBJ_DIR)/%.o, $(SERVER_SRCS))
+# ───── 기본 타깃 ──────────────────────────────────────────────────────────────
+.PHONY: all client server clean
+all: $(CLIENT_BIN) $(SERVER_BIN)
+	@echo "=== Build finished successfully ==="
 
-
-.PHONY: all client server clean clean_client clean_server directories
-
-# 변수 값 확인용 echo (모든 변수 정의 이후에 위치)
-# $(info CLIENT_INCLUDE_DIR is [$(CLIENT_INCLUDE_DIR)])
-# $(info COMMON_INCLUDE_DIR is [$(COMMON_INCLUDE_DIR)])
-# $(info CLIENT_GLOBALS_H is [$(CLIENT_GLOBALS_H)])
-# $(info CLIENT_NETWORK_H is [$(CLIENT_NETWORK_H)])
-# $(info SERVER_INCLUDE_DIR is [$(SERVER_INCLUDE_DIR)])
-# $(info SERVER_AUTH_MANAGER_H is [$(SERVER_AUTH_MANAGER_H)])
-# $(info SERVER_NETWORK_H is [$(SERVER_NETWORK_H)])
-# $(info COMMON_PROTOCOL_H is [$(COMMON_PROTOCOL_H)])
-
-
-all: directories client server
-	@echo "=== Build completed successfully ==="
-
-directories:
-	@echo ">>> Creating build directories..."
-	@mkdir -p $(BIN_DIR)
-	@mkdir -p $(CLIENT_OBJ_DIR)
-	@mkdir -p $(SERVER_OBJ_DIR)
-
-client: $(CLIENT_TARGET)
-	@echo ">>> Client build complete: $(CLIENT_TARGET_NAME)"
-
-server: $(SERVER_TARGET)
-	@echo ">>> Server build complete: $(SERVER_TARGET_NAME)"
-
-# --- Client Build Rules ---
-$(CLIENT_TARGET): $(CLIENT_OBJS)
+# ───── 클라이언트 빌드 ────────────────────────────────────────────────────────
+$(CLIENT_BIN): $(CLIENT_OBJS)
 	@echo ">>> Linking client executable..."
-	@$(CC) $(CLIENT_CFLAGS) $^ -o $@ $(CLIENT_LDFLAGS) $(CLIENT_LIBS)
+	$(CC) $^ -o $@ $(LDFLAGS) $(CLIENT_LIBS)
 
-$(CLIENT_OBJ_DIR)/client_main.o: $(CLIENT_SRC_DIR)/client_main.c $(CLIENT_INCLUDE_DIR)/auth_ui.h $(CLIENT_INCLUDE_DIR)/leaderboard_ui.h $(CLIENT_NETWORK_H) $(CLIENT_INCLUDE_DIR)/game_logic.h $(COMMON_PROTOCOL_H) $(CLIENT_GLOBALS_H)
-	@echo "Compiling: $(<F)"
-	@$(CC) $(CLIENT_CFLAGS) -c $< -o $@
+$(OBJ_DIR)/client/%.o: client/src/%.c
+	@echo "Compiling (Client): $<"
+	$(CC) $(CLIENT_CFLAGS) -c $< -o $@
 
-$(CLIENT_OBJ_DIR)/auth_ui.o: $(CLIENT_SRC_DIR)/auth_ui.c $(CLIENT_INCLUDE_DIR)/auth_ui.h $(CLIENT_NETWORK_H) $(COMMON_PROTOCOL_H) $(CLIENT_GLOBALS_H)
-	@echo "Compiling: $(<F)"
-	@$(CC) $(CLIENT_CFLAGS) -c $< -o $@
+client: $(CLIENT_BIN)
 
-$(CLIENT_OBJ_DIR)/leaderboard_ui.o: $(CLIENT_SRC_DIR)/leaderboard_ui.c $(CLIENT_INCLUDE_DIR)/leaderboard_ui.h $(CLIENT_NETWORK_H) $(COMMON_PROTOCOL_H) $(CLIENT_GLOBALS_H)
-	@echo "Compiling: $(<F)"
-	@$(CC) $(CLIENT_CFLAGS) -c $< -o $@
-
-$(CLIENT_OBJ_DIR)/client_network.o: $(CLIENT_SRC_DIR)/client_network.c $(CLIENT_NETWORK_H) $(COMMON_PROTOCOL_H) $(CLIENT_GLOBALS_H)
-	@echo "Compiling: $(<F)"
-	@$(CC) $(CLIENT_CFLAGS) -c $< -o $@
-
-$(CLIENT_OBJ_DIR)/game_logic.o: $(CLIENT_SRC_DIR)/game_logic.c $(CLIENT_INCLUDE_DIR)/game_logic.h $(CLIENT_GLOBALS_H)
-	@echo "Compiling: $(<F)"
-	@$(CC) $(CLIENT_CFLAGS) -c $< -o $@
-
-# --- Server Build Rules ---
-$(SERVER_TARGET): $(SERVER_OBJS)
+# ───── 서버 빌드 ──────────────────────────────────────────────────────────────
+$(SERVER_BIN): $(SERVER_OBJS)
 	@echo ">>> Linking server executable..."
-	@$(CC) $(SERVER_CFLAGS) $^ -o $@ $(SERVER_LDFLAGS) $(SERVER_LIBS)
+	$(CC) $^ -o $@ $(LDFLAGS) $(LIBS)
 
-$(SERVER_OBJ_DIR)/server_main.o: $(SERVER_SRC_DIR)/server_main.c $(SERVER_NETWORK_H) $(SERVER_AUTH_MANAGER_H) $(SERVER_INCLUDE_DIR)/score_manager.h $(SERVER_INCLUDE_DIR)/db_handler.h $(COMMON_PROTOCOL_H)
-	@echo "Compiling: $(<F)"
-	@$(CC) $(SERVER_CFLAGS) -c $< -o $@
+$(OBJ_DIR)/server/%.o: server/src/%.c
+	@echo "Compiling (Server): $<"
+	$(CC) $(SERVER_CFLAGS) -c $< -o $@
 
-$(SERVER_OBJ_DIR)/server_network.o: $(SERVER_SRC_DIR)/server_network.c $(SERVER_NETWORK_H) $(SERVER_AUTH_MANAGER_H) $(SERVER_INCLUDE_DIR)/score_manager.h $(COMMON_PROTOCOL_H)
-	@echo "Compiling: $(<F)"
-	@$(CC) $(SERVER_CFLAGS) -c $< -o $@
+server: $(SERVER_BIN)
 
-$(SERVER_OBJ_DIR)/auth_manager.o: $(SERVER_SRC_DIR)/auth_manager.c $(SERVER_AUTH_MANAGER_H) $(SERVER_INCLUDE_DIR)/db_handler.h $(COMMON_PROTOCOL_H)
-	@echo "Compiling: $(<F)"
-	@$(CC) $(SERVER_CFLAGS) -c $< -o $@
-
-$(SERVER_OBJ_DIR)/score_manager.o: $(SERVER_SRC_DIR)/score_manager.c $(SERVER_INCLUDE_DIR)/score_manager.h $(SERVER_INCLUDE_DIR)/db_handler.h $(COMMON_PROTOCOL_H)
-	@echo "Compiling: $(<F)"
-	@$(CC) $(SERVER_CFLAGS) -c $< -o $@
-
-$(SERVER_OBJ_DIR)/db_handler.o: $(SERVER_SRC_DIR)/db_handler.c $(SERVER_INCLUDE_DIR)/db_handler.h $(COMMON_PROTOCOL_H)
-	@echo "Compiling: $(<F)"
-	@$(CC) $(SERVER_CFLAGS) -c $< -o $@
-
-# --- Cleaning Rules ---
-clean_client:
-	@echo ">>> Cleaning client files..."
-	@rm -f $(CLIENT_OBJS) $(CLIENT_TARGET)
-	@echo "Client cleanup complete"
-
-clean_server:
-	@echo ">>> Cleaning server files..."
-	@rm -f $(SERVER_OBJS) $(SERVER_TARGET)
-	@echo "Server cleanup complete"
-
+# ───── 클린업 ─────────────────────────────────────────────────────────────────
 clean:
-	@echo ">>> Cleaning all build artifacts..."
-	@rm -f $(CLIENT_OBJS) $(CLIENT_TARGET)
-	@rm -f $(SERVER_OBJS) $(SERVER_TARGET)
-	@rm -rf $(OBJ_BASE_DIR)
-	@rm -rf $(BIN_DIR)
-	@if [ -d "$(DATA_DIR)" ]; then \
-		echo "Removing data directory: $(DATA_DIR)"; \
-		rm -rf $(DATA_DIR); \
+	@echo ">>> Cleaning build artifacts (words.txt 보존)…"
+
+	# ── 1) 객체 디렉터리 통째 삭제 ─────────────────────────────
+	@rm -rf $(OBJ_DIR)
+
+	# ── 2) 실행 파일만 삭제 (bin/은 건드리지 않음) ────────────
+	@rm -f $(CLIENT_BIN) $(SERVER_BIN)
+
+	# ── 3) bin/ 안에서 words.txt 를 제외한 모든 파일 삭제 ───
+	@find $(BIN_DIR) -type f ! -name 'words.txt' -delete
+
+	# ── 4) bin/ 이 완전히 비었을 때만 제거 (words.txt 있으면 유지)
+	@rmdir --ignore-fail-on-non-empty $(BIN_DIR) 2>/dev/null || true
+
+	# ── 5) data/ 안에서 words.txt 만 보존하고 나머지 삭제 ───
+	@if [ -d data ]; then \
+		find data -type f ! -name 'words.txt' -delete; \
+		rmdir --ignore-fail-on-non-empty data 2>/dev/null || true; \
 	fi
+
 	@echo "=== Cleanup complete ==="
+
+
+
+###############################################################################
+# 사용 예:
+#   $ make          # 클라이언트 + 서버 전체 빌드
+#   $ make client   # 클라이언트만
+#   $ make server   # 서버만
+#   $ make clean    # words.txt 제외 모든 산출물 삭제
+###############################################################################

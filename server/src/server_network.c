@@ -12,6 +12,7 @@
 #include "auth_manager.h"
 #include "protocol.h"
 #include "score_manager.h"
+#include "word_manager.h"
 
 // extern volatile sig_atomic_t server_shutdown_requested; // from server_main.c
 
@@ -92,18 +93,30 @@ void* handle_client(void* arg) {
       }
       case MSG_TYPE_LEADERBOARD_REQ: {
         LeaderboardResponse resp_data;
-        get_leaderboard_impl(resp_data.entries, &resp_data.count, MAX_LEADERBOARD_ENTRIES);
-        if (resp_data.count <= 0) {
-          strncpy(resp_data.message, "Leaderboard is empty or unavailable.", MAX_MSG_LEN - 1);
-        } else {
-          strncpy(resp_data.message, "Leaderboard data retrieved.", MAX_MSG_LEN - 1);
-        }
-        resp_data.message[MAX_MSG_LEN - 1] = '\0';
-        resp_header.type = MSG_TYPE_LEADERBOARD_RESP;
-        response_data_len = sizeof(LeaderboardResponse);
+        // 서버 사이드에서 점수 파일을 읽어와 응답 데이터 채우기
+        get_leaderboard_impl(
+            resp_data.entries,
+            &resp_data.count,
+            MAX_LEADERBOARD_ENTRIES  /* :contentReference[oaicite:2]{index=2}:contentReference[oaicite:3]{index=3} */
+        );
+        resp_header.type       = MSG_TYPE_LEADERBOARD_RESP;   /* :contentReference[oaicite:4]{index=4}:contentReference[oaicite:5]{index=5} */
+        response_data_len      = sizeof(LeaderboardResponse);
         memcpy(resp_data_ptr, &resp_data, response_data_len);
         break;
       }
+      case MSG_TYPE_WORDLIST_REQ: {
+        /* 한 덩어리 버퍼에 헤더와 본문을 붙여 전송 */
+        char buf[sizeof(MessageHeader) + sizeof(WordListResponse)];
+        MessageHeader hdr = { MSG_TYPE_WORDLIST_RESP,
+                              sizeof(WordListResponse) };
+
+        memcpy(buf, &hdr, sizeof(hdr));
+        memcpy(buf + sizeof(hdr), &g_wordlist, sizeof(WordListResponse));
+
+        send(client_sock, buf, sizeof(buf), 0);   /* 단일 send */
+        send_response = false;                    /* 공통 루틴 skip */
+        break;
+     }
       case MSG_TYPE_LOGOUT_REQ: {
         LogoutResponse resp_data;
         if (strlen(current_user) > 0) {
@@ -121,6 +134,7 @@ void* handle_client(void* arg) {
         memcpy(resp_data_ptr, &resp_data, response_data_len);
         break;
       }
+      
       default: {
         ErrorResponse err_resp;
         snprintf(err_resp.message, MAX_MSG_LEN, "Unknown or unsupported message type: %d", header->type);
