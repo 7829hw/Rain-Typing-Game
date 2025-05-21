@@ -50,3 +50,9 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Text files
+*.txt
+
+# JSON files
+*.json
