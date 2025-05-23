@@ -82,12 +82,12 @@ static int send_request_and_receive_response(MessageType type, const void* reque
   if (resp_header->type == MSG_TYPE_ERROR) {
     ErrorResponse* err_resp = (ErrorResponse*)(recv_buffer + sizeof(MessageHeader));
     if (response_body && (size_t)response_body_max_len >= sizeof(ErrorResponse)) {
-      strncpy(((struct {
-                int success;
-                char message[MAX_MSG_LEN];
-              }*)response_body)
-                  ->message,
-              err_resp->message, MAX_MSG_LEN - 1);
+      snprintf(((struct {
+                 int success;
+                 char message[MAX_MSG_LEN];
+               }*)response_body)
+                   ->message,
+               MAX_MSG_LEN, "%s", err_resp->message);
       ((struct {
         int success;
         char message[MAX_MSG_LEN];
@@ -150,11 +150,6 @@ int send_logout_request(LogoutResponse* response) {
   return send_request_and_receive_response(MSG_TYPE_LOGOUT_REQ, NULL, 0, MSG_TYPE_LOGOUT_RESP, response, sizeof(LogoutResponse));
 }
 
-int send_wordlist_request(WordListResponse* resp)
-{
-    return send_request_and_receive_response(
-        MSG_TYPE_WORDLIST_REQ,
-        NULL, 0,
-        MSG_TYPE_WORDLIST_RESP,
-        resp, sizeof(WordListResponse));
+int send_wordlist_request(WordListResponse* resp) {
+  return send_request_and_receive_response(MSG_TYPE_WORDLIST_REQ, NULL, 0, MSG_TYPE_WORDLIST_RESP, resp, sizeof(WordListResponse));
 }

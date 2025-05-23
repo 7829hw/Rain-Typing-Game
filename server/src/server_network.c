@@ -2,13 +2,13 @@
 #include "server_network.h"  // 변경된 헤더 파일 이름
 
 #include <errno.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <pthread.h>
 
 #include "auth_manager.h"
 #include "protocol.h"
@@ -17,9 +17,9 @@
 
 // 로그인된 사용자 관리 구조체
 typedef struct {
-    char username[MAX_ID_LEN];
-    int client_sock;
-    bool is_active;
+  char username[MAX_ID_LEN];
+  int client_sock;
+  bool is_active;
 } LoggedInUser;
 
 #define MAX_LOGGED_IN_USERS 100
@@ -28,67 +28,55 @@ static pthread_mutex_t logged_in_users_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // 사용자가 이미 로그인되어 있는지 확인하는 함수
 static int is_user_already_logged_in(const char* username) {
-    int result = -1;
-    pthread_mutex_lock(&logged_in_users_mutex);
-    for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
-        if (logged_in_users[i].is_active && strcmp(logged_in_users[i].username, username) == 0) {
-            result = i;
-            break;
-        }
+  int result = -1;
+  pthread_mutex_lock(&logged_in_users_mutex);
+  for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
+    if (logged_in_users[i].is_active && strcmp(logged_in_users[i].username, username) == 0) {
+      result = i;
+      break;
     }
-    pthread_mutex_unlock(&logged_in_users_mutex);
-    return result;
+  }
+  pthread_mutex_unlock(&logged_in_users_mutex);
+  return result;
 }
 
 // 사용자를 로그인 목록에 추가하는 함수
 static int add_logged_in_user(const char* username, int client_sock) {
-    int result = 0;
-    pthread_mutex_lock(&logged_in_users_mutex);
-    for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
-        if (!logged_in_users[i].is_active) {
-            strncpy(logged_in_users[i].username, username, MAX_ID_LEN - 1);
-            logged_in_users[i].username[MAX_ID_LEN - 1] = '\0';
-            logged_in_users[i].client_sock = client_sock;
-            logged_in_users[i].is_active = true;
-            result = 1;
-            break;
-        }
+  int result = 0;
+  pthread_mutex_lock(&logged_in_users_mutex);
+  for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
+    if (!logged_in_users[i].is_active) {
+      snprintf(logged_in_users[i].username, MAX_ID_LEN, "%s", username);
+      logged_in_users[i].username[MAX_ID_LEN - 1] = '\0';
+      logged_in_users[i].client_sock = client_sock;
+      logged_in_users[i].is_active = true;
+      result = 1;
+      break;
     }
-    pthread_mutex_unlock(&logged_in_users_mutex);
-    return result;
+  }
+  pthread_mutex_unlock(&logged_in_users_mutex);
+  return result;
 }
 
 // 사용자를 로그인 목록에서 제거하는 함수
 static void remove_logged_in_user(const char* username) {
-    pthread_mutex_lock(&logged_in_users_mutex);
-    for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
-        if (logged_in_users[i].is_active && strcmp(logged_in_users[i].username, username) == 0) {
-            logged_in_users[i].is_active = false;
-            break;
-        }
+  pthread_mutex_lock(&logged_in_users_mutex);
+  for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
+    if (logged_in_users[i].is_active && strcmp(logged_in_users[i].username, username) == 0) {
+      logged_in_users[i].is_active = false;
+      break;
     }
-    pthread_mutex_unlock(&logged_in_users_mutex);
-}
-
-// 클라이언트 소켓으로 로그인된 사용자를 제거하는 함수
-static void remove_logged_in_user_by_sock(int client_sock) {
-    pthread_mutex_lock(&logged_in_users_mutex);
-    for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
-        if (logged_in_users[i].is_active && logged_in_users[i].client_sock == client_sock) {
-            logged_in_users[i].is_active = false;
-            break;
-        }
-    }
-    pthread_mutex_unlock(&logged_in_users_mutex);
+  }
+  pthread_mutex_unlock(&logged_in_users_mutex);
 }
 
 // 서버 시작 시 로그인 사용자 목록 초기화
 void init_logged_in_users() {
-    pthread_mutex_lock(&logged_in_users_mutex);
-    for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
-        logged_in_users[i].is_active = false;
-    }
-    pthread_mutex_unlock(&logged_in_users_mutex);
+  pthread_mutex_lock(&logged_in_users_mutex);
+  for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
+    logged_in_users[i].is_active = false;
+  }
+  pthread_mutex_unlock(&logged_in_users_mutex);
 }
 
 void* handle_client(void* arg) {
@@ -140,7 +128,7 @@ void* handle_client(void* arg) {
       case MSG_TYPE_LOGIN_REQ: {
         LoginRequest* req = (LoginRequest*)(buffer + sizeof(MessageHeader));
         LoginResponse resp_data;
-        
+
         // 이미 로그인된 사용자인지 확인
         if (is_user_already_logged_in(req->username) != -1) {
           resp_data.success = 0;
@@ -186,29 +174,26 @@ void* handle_client(void* arg) {
       case MSG_TYPE_LEADERBOARD_REQ: {
         LeaderboardResponse resp_data;
         // 서버 사이드에서 점수 파일을 읽어와 응답 데이터 채우기
-        get_leaderboard_impl(
-            resp_data.entries,
-            &resp_data.count,
-            MAX_LEADERBOARD_ENTRIES  /* :contentReference[oaicite:2]{index=2}:contentReference[oaicite:3]{index=3} */
+        get_leaderboard_impl(resp_data.entries, &resp_data.count,
+                             MAX_LEADERBOARD_ENTRIES /* :contentReference[oaicite:2]{index=2}:contentReference[oaicite:3]{index=3} */
         );
-        resp_header.type       = MSG_TYPE_LEADERBOARD_RESP;   /* :contentReference[oaicite:4]{index=4}:contentReference[oaicite:5]{index=5} */
-        response_data_len      = sizeof(LeaderboardResponse);
+        resp_header.type = MSG_TYPE_LEADERBOARD_RESP; /* :contentReference[oaicite:4]{index=4}:contentReference[oaicite:5]{index=5} */
+        response_data_len = sizeof(LeaderboardResponse);
         memcpy(resp_data_ptr, &resp_data, response_data_len);
         break;
       }
       case MSG_TYPE_WORDLIST_REQ: {
         /* 한 덩어리 버퍼에 헤더와 본문을 붙여 전송 */
         char buf[sizeof(MessageHeader) + sizeof(WordListResponse)];
-        MessageHeader hdr = { MSG_TYPE_WORDLIST_RESP,
-                              sizeof(WordListResponse) };
+        MessageHeader hdr = {MSG_TYPE_WORDLIST_RESP, sizeof(WordListResponse)};
 
         memcpy(buf, &hdr, sizeof(hdr));
         memcpy(buf + sizeof(hdr), &g_wordlist, sizeof(WordListResponse));
 
-        send(client_sock, buf, sizeof(buf), 0);   /* 단일 send */
-        send_response = false;                    /* 공통 루틴 skip */
+        send(client_sock, buf, sizeof(buf), 0); /* 단일 send */
+        send_response = false;                  /* 공통 루틴 skip */
         break;
-     }
+      }
       case MSG_TYPE_LOGOUT_REQ: {
         LogoutResponse resp_data;
         if (strlen(current_user) > 0) {
@@ -228,7 +213,7 @@ void* handle_client(void* arg) {
         memcpy(resp_data_ptr, &resp_data, response_data_len);
         break;
       }
-      
+
       default: {
         ErrorResponse err_resp;
         snprintf(err_resp.message, MAX_MSG_LEN, "Unknown or unsupported message type: %d", header->type);
@@ -257,10 +242,10 @@ void* handle_client(void* arg) {
 
   // 연결 종료 처리 부분(함수 끝부분)
   if (strlen(current_user) > 0) {
-  printf("[SERVER_NETWORK] Cleaning up session for user %s on socket %d due to disconnect/error.\n", current_user, client_sock);
-  // 로그인 목록에서 제거
-  remove_logged_in_user(current_user);
-}
+    printf("[SERVER_NETWORK] Cleaning up session for user %s on socket %d due to disconnect/error.\n", current_user, client_sock);
+    // 로그인 목록에서 제거
+    remove_logged_in_user(current_user);
+  }
   close(client_sock);
   return NULL;
 }

@@ -66,12 +66,22 @@ void get_leaderboard_impl(LeaderboardEntry* final_leaderboard_entries, int* fina
   for (int i = 0; i < num_scores_loaded; i++) {
     if (strcmp(all_scores[i].username, last_processed_user) != 0) {
       if (*final_count < max_final_entries) {
-        strncpy(final_leaderboard_entries[*final_count].username, all_scores[i].username, MAX_ID_LEN - 1);
+        size_t copy_len = strlen(all_scores[i].username);
+        if (copy_len >= MAX_ID_LEN) {
+          copy_len = MAX_ID_LEN - 1;
+        }
+        memcpy(final_leaderboard_entries[*final_count].username, all_scores[i].username, copy_len);
+        final_leaderboard_entries[*final_count].username[copy_len] = '\0';
         final_leaderboard_entries[*final_count].username[MAX_ID_LEN - 1] = '\0';
         final_leaderboard_entries[*final_count].score = all_scores[i].score;
         (*final_count)++;
 
-        strncpy(last_processed_user, all_scores[i].username, MAX_ID_LEN - 1);
+        copy_len = strlen(all_scores[i].username);
+        if (copy_len >= MAX_ID_LEN) {
+          copy_len = MAX_ID_LEN - 1;
+        }
+        memcpy(last_processed_user, all_scores[i].username, copy_len);
+        last_processed_user[copy_len] = '\0';
         last_processed_user[MAX_ID_LEN - 1] = '\0';
       }
     }
