@@ -11,7 +11,7 @@
 #include "auth_manager.h"
 #include "db_handler.h"
 #include "score_manager.h"
-#include "server_network.h"  // 변경: network_server.h -> server_network.h
+#include "server_network.h"
 #include "word_manager.h"
 
 #define PORT 8080
@@ -21,7 +21,7 @@ volatile sig_atomic_t server_shutdown_requested = 0;
 int server_sock_fd = -1;
 
 void handle_server_sigint(int sig) {
-  (void)sig;  // Unused parameter
+  (void)sig;
   server_shutdown_requested = 1;
   if (server_sock_fd != -1) {
     printf("\n[SERVER_MAIN] SIGINT received. Closing server socket to stop accept() loop.\n");
@@ -51,33 +51,30 @@ int main() {
   server_addr.sin_port = htons(PORT);
 
   int opt = 1;
-  if (setsockopt(server_sock_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {
-    perror("setsockopt(SO_REUSEADDR) failed");
-  }
+  setsockopt(server_sock_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
   if (bind(server_sock_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
     perror("bind() error");
-    if (server_sock_fd != -1) close(server_sock_fd);
+    close(server_sock_fd);
     exit(EXIT_FAILURE);
   }
 
   if (listen(server_sock_fd, MAX_CLIENTS) == -1) {
     perror("listen() error");
-    if (server_sock_fd != -1) close(server_sock_fd);
+    close(server_sock_fd);
     exit(EXIT_FAILURE);
   }
 
   printf("Rain Typing Game Server started on port %d...\n", PORT);
   printf("Press Ctrl+C to shut down the server.\n");
 
-  /* ① users.txt·scores.txt를 만들면서 data/ 폴더가 존재하도록 만듦 */
-  init_db_files();               /* DATA_DIR_PATH == "data" */  
+  init_db_files();
 
-  /* ② 이제 data/words.txt 를 읽어 들임 */
   if (load_wordlist_from_file("data/words.txt") <= 0) {
-      fprintf(stderr, "[SERVER] data/words.txt load failed\n");
-      exit(EXIT_FAILURE);
+    fprintf(stderr, "[SERVER] data/words.txt load failed\n");
+    exit(EXIT_FAILURE);
   }
+
   extern void init_logged_in_users();
   init_logged_in_users();
   init_auth_system();

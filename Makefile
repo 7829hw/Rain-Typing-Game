@@ -7,8 +7,7 @@
 
 # ───── 공통 ────────────────────────────────────────────────────────────────────
 CC       := gcc
-CFLAGS   := -Wall -Wextra -g -O2 \
-			-Wno-stringop-truncation
+CFLAGS   := -Wall -Wextra -g -O2
 LDFLAGS  :=
 LIBS     := -lpthread
 
@@ -31,10 +30,8 @@ CLIENT_SRC := \
     client/src/game_logic.c
 
 CLIENT_OBJS := $(patsubst client/src/%.c,$(OBJ_DIR)/client/%.o,$(CLIENT_SRC))
-CLIENT_CFLAGS := $(CFLAGS) -I$(CLIENT_INC) -I$(COMMON_INC) \
-                 $(shell pkg-config --cflags ncursesw 2>/dev/null)
-CLIENT_LIBS   := $(if $(shell pkg-config --libs ncursesw 2>/dev/null), \
-                    $(shell pkg-config --libs ncursesw), -lncursesw) -lpthread
+CLIENT_CFLAGS := $(CFLAGS) -I$(CLIENT_INC) -I$(COMMON_INC)
+CLIENT_LIBS   := -lncursesw -lpthread
 CLIENT_BIN    := $(BIN_DIR)/rain_client
 
 # ───── 서버 ───────────────────────────────────────────────────────────────────
@@ -52,6 +49,7 @@ SERVER_BIN    := $(BIN_DIR)/rain_server
 
 # ───── 기본 타깃 ──────────────────────────────────────────────────────────────
 .PHONY: all client server clean
+
 all: $(CLIENT_BIN) $(SERVER_BIN)
 	@echo "=== Build finished successfully ==="
 
@@ -79,34 +77,21 @@ server: $(SERVER_BIN)
 
 # ───── 클린업 ─────────────────────────────────────────────────────────────────
 clean:
-	@echo ">>> Cleaning build artifacts (words.txt 보존)…"
-
-	# ── 1) 객체 디렉터리 통째 삭제 ─────────────────────────────
+	@echo ">>> Cleaning build artifacts (words.txt, users.txt, scores.txt 보존)…"
 	@rm -rf $(OBJ_DIR)
-
-	# ── 2) 실행 파일만 삭제 (bin/은 건드리지 않음) ────────────
 	@rm -f $(CLIENT_BIN) $(SERVER_BIN)
-
-	# ── 3) bin/ 안에서 words.txt 를 제외한 모든 파일 삭제 ───
-	@find $(BIN_DIR) -type f ! -name 'words.txt' -delete
-
-	# ── 4) bin/ 이 완전히 비었을 때만 제거 (words.txt 있으면 유지)
+	@find $(BIN_DIR) -type f ! \( -name 'words.txt' -o -name 'users.txt' -o -name 'scores.txt' \) -delete 2>/dev/null || true
 	@rmdir --ignore-fail-on-non-empty $(BIN_DIR) 2>/dev/null || true
-
-	# ── 5) data/ 안에서 words.txt 만 보존하고 나머지 삭제 ───
 	@if [ -d data ]; then \
-		find data -type f ! -name 'words.txt' -delete; \
+		find data -type f ! \( -name 'words.txt' -o -name 'users.txt' -o -name 'scores.txt' \) -delete 2>/dev/null || true; \
 		rmdir --ignore-fail-on-non-empty data 2>/dev/null || true; \
 	fi
-
 	@echo "=== Cleanup complete ==="
-
-
 
 ###############################################################################
 # 사용 예:
 #   $ make          # 클라이언트 + 서버 전체 빌드
 #   $ make client   # 클라이언트만
 #   $ make server   # 서버만
-#   $ make clean    # words.txt 제외 모든 산출물 삭제
+#   $ make clean    # words.txt, users.txt, scores.txt 제외 모든 산출물 삭제
 ###############################################################################

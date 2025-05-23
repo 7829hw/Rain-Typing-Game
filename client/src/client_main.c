@@ -1,3 +1,4 @@
+// client/src/client_main.c
 #include <locale.h>
 #include <ncurses.h>
 #include <signal.h>
@@ -47,36 +48,29 @@ static void init_ncurses_settings(void) {
   keypad(stdscr, TRUE);
   curs_set(0);
   timeout(-1);
-  if (has_colors()) {
-    start_color();
-    init_pair(COLOR_PAIR_KILL, COLOR_RED, COLOR_BLACK);
-    init_pair(COLOR_PAIR_BONUS, COLOR_BLUE, COLOR_BLACK);
-  }
+  start_color();
+  init_pair(COLOR_PAIR_KILL, COLOR_RED, COLOR_BLACK);
+  init_pair(COLOR_PAIR_BONUS, COLOR_BLUE, COLOR_BLACK);
 }
 
 static void end_ncurses_settings(void) { endwin(); }
 
 static void perform_cleanup_and_exit(int code, const char* msg) {
   is_game_running = false;
-
-  // 새로운 메모리 관리 시스템 정리
   cleanup_word_manager();
   cleanup_active_word_table();
-
   disconnect_from_server();
   end_ncurses_settings();
   if (msg) printf("%s\n", msg);
   exit(code);
 }
 
-// 서버에서 단어 리스트를 가져와서 새로운 메모리 관리 시스템에 로드
 static int load_words_from_server(void) {
   WordListResponse wresp;
   if (send_wordlist_request(&wresp) != 0 || wresp.count <= 0) {
-    return 0;  // 실패
+    return 0;
   }
 
-  // 문자열 포인터 배열 생성 (임시)
   const char** word_ptrs = malloc(sizeof(char*) * wresp.count);
   if (!word_ptrs) {
     return 0;
@@ -86,9 +80,7 @@ static int load_words_from_server(void) {
     word_ptrs[i] = wresp.words[i];
   }
 
-  // 새로운 메모리 관리 시스템에 로드
   int result = load_words_from_response(word_ptrs, wresp.count);
-
   free(word_ptrs);
   return result;
 }
@@ -97,7 +89,6 @@ int main() {
   signal(SIGINT, handle_sigint);
   init_ncurses_settings();
 
-  // 메모리 관리 시스템 초기화
   if (!init_word_manager()) {
     perform_cleanup_and_exit(EXIT_FAILURE, "Failed to initialize word manager.");
   }
@@ -115,9 +106,7 @@ int main() {
       const char* conn_fail_msg = "Failed to connect to server. Press any key to exit.";
       mvprintw(LINES / 2, (COLS - strlen(conn_fail_msg)) / 2, "%s", conn_fail_msg);
       refresh();
-      timeout(-1);
       getch();
-      timeout(-1);
       perform_cleanup_and_exit(EXIT_FAILURE, "Server connection failed.");
     }
 
@@ -144,7 +133,6 @@ int main() {
         }
         sigint_game_exit_requested = 0;
 
-        // Draw menu using off-screen buffer to reduce flicker
         erase();
         mvprintw(Y_TITLE, X_DEFAULT_POS, "Logged in as: %s", user_id);
         mvprintw(Y_OPTIONS_START, X_DEFAULT_POS, "1. Start Game");
@@ -152,10 +140,8 @@ int main() {
         mvprintw(Y_OPTIONS_START + 2, X_DEFAULT_POS, "3. Logout");
         mvprintw(Y_OPTIONS_START + 3, X_DEFAULT_POS, "4. Exit Game");
         mvprintw(Y_OPTIONS_START + 5, X_DEFAULT_POS, "Select an option: ");
-        wnoutrefresh(stdscr);
-        doupdate();
+        refresh();
 
-        timeout(-1);  // Blocking input to avoid continuous redraw
         int choice = getch();
 
         switch (choice) {
@@ -164,7 +150,6 @@ int main() {
             clear();
             refresh();
 
-            /* 단어 리스트 로드 (새로운 메모리 관리 시스템 사용) */
             if (!g_word_manager.is_initialized || g_word_manager.count == 0) {
               if (!load_words_from_server()) {
                 mvprintw(Y_STATUS_MSG, X_DEFAULT_POS, "Failed to load word list from server.");
@@ -246,9 +231,7 @@ int main() {
             const char* exit_confirm_msg = "Are you sure you want to exit? (y/n)";
             mvprintw(LINES / 2 - 1, (COLS - strlen(exit_confirm_msg)) / 2, "%s", exit_confirm_msg);
             refresh();
-            timeout(-1);
             int confirm = getch();
-            timeout(-1);
 
             if (confirm == 'y' || confirm == 'Y') {
               perform_cleanup_and_exit(EXIT_SUCCESS, "Exiting game by user's choice.");
