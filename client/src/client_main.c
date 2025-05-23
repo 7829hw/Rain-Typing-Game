@@ -9,47 +9,98 @@
 #include "auth_ui.h"
 #include "client_globals.h"
 #include "client_network.h"
-#include "game_logic.h"   /* COLOR_PAIR_* 매크로 사용 */
+#include "game_logic.h"
 #include "leaderboard_ui.h"
 #include "protocol.h"
 
-#define SERVER_IP   "127.0.0.1"
+#define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 8080
 
-volatile sig_atomic_t sigint_received            = 0;
+volatile sig_atomic_t sigint_received = 0;
 volatile sig_atomic_t sigint_game_exit_requested = 0;
-bool                  is_game_running            = false;
+bool is_game_running = false;
 
 static void handle_sigint(int sig) {
   (void)sig;
-  if (is_game_running) sigint_game_exit_requested = 1;
-  else                 sigint_received = 1;
+  if (is_game_running)
+    sigint_game_exit_requested = 1;
+  else
+    sigint_received = 1;
 }
 
-void wait_for_key_or_signal(int y,int x,const char* prompt) {
-  mvprintw(y,x,"%s",prompt); clrtoeol(); refresh();
-  int key; do { if (sigint_game_exit_requested||sigint_received) break; key=getch(); } while(key==ERR);
+void wait_for_key_or_signal(int y, int x, const char* prompt) {
+  mvprintw(y, x, "%s", prompt);
+  clrtoeol();
+  refresh();
+  int key;
+  do {
+    if (sigint_game_exit_requested || sigint_received) break;
+    key = getch();
+  } while (key == ERR);
 }
 
 static void init_ncurses_settings(void) {
   setlocale(LC_ALL, "");
-  initscr(); cbreak(); noecho(); keypad(stdscr,TRUE); curs_set(0); timeout(-1);
+  initscr();
+  cbreak();
+  noecho();
+  keypad(stdscr, TRUE);
+  curs_set(0);
+  timeout(-1);
   if (has_colors()) {
     start_color();
-    init_pair(COLOR_PAIR_KILL,  COLOR_RED,  COLOR_BLACK);
+    init_pair(COLOR_PAIR_KILL, COLOR_RED, COLOR_BLACK);
     init_pair(COLOR_PAIR_BONUS, COLOR_BLUE, COLOR_BLACK);
   }
 }
 
-static void end_ncurses_settings(void){ endwin(); }
+static void end_ncurses_settings(void) { endwin(); }
 
-static void perform_cleanup_and_exit(int code,const char* msg){
-  is_game_running=false; disconnect_from_server(); end_ncurses_settings(); if(msg) printf("%s\n",msg); exit(code);
+static void perform_cleanup_and_exit(int code, const char* msg) {
+  is_game_running = false;
+
+  // 새로운 메모리 관리 시스템 정리
+  cleanup_word_manager();
+  cleanup_active_word_table();
+
+  disconnect_from_server();
+  end_ncurses_settings();
+  if (msg) printf("%s\n", msg);
+  exit(code);
+}
+
+// 서버에서 단어 리스트를 가져와서 새로운 메모리 관리 시스템에 로드
+static int load_words_from_server(void) {
+  WordListResponse wresp;
+  if (send_wordlist_request(&wresp) != 0 || wresp.count <= 0) {
+    return 0;  // 실패
+  }
+
+  // 문자열 포인터 배열 생성 (임시)
+  const char** word_ptrs = malloc(sizeof(char*) * wresp.count);
+  if (!word_ptrs) {
+    return 0;
+  }
+
+  for (int i = 0; i < wresp.count; i++) {
+    word_ptrs[i] = wresp.words[i];
+  }
+
+  // 새로운 메모리 관리 시스템에 로드
+  int result = load_words_from_response(word_ptrs, wresp.count);
+
+  free(word_ptrs);
+  return result;
 }
 
 int main() {
   signal(SIGINT, handle_sigint);
   init_ncurses_settings();
+
+  // 메모리 관리 시스템 초기화
+  if (!init_word_manager()) {
+    perform_cleanup_and_exit(EXIT_FAILURE, "Failed to initialize word manager.");
+  }
 
   char user_id[MAX_ID_LEN] = {0};
 
@@ -112,24 +163,20 @@ int main() {
             is_game_running = true;
             clear();
             refresh();
-            /* 단어 리스트가 아직 없으면 서버에서 받아옴 */
-            if (dynamic_word_list == NULL) {
-                WordListResponse wresp;
-                if (send_wordlist_request(&wresp) != 0 || wresp.count <= 0) {
-                    mvprintw(Y_STATUS_MSG, X_DEFAULT_POS,
-                            "Failed to load word list from server.");
-                    wait_for_key_or_signal(Y_STATUS_MSG+2, X_DEFAULT_POS,
-                                          "Press any key...");
-                    break;               /* 메뉴로 복귀 */
-                }
-                dynamic_word_count = wresp.count;
-                dynamic_word_list  = malloc(sizeof(char*)*wresp.count);
-                for (int i=0;i<wresp.count;++i)
-                    dynamic_word_list[i] = strdup(wresp.words[i]);
+
+            /* 단어 리스트 로드 (새로운 메모리 관리 시스템 사용) */
+            if (!g_word_manager.is_initialized || g_word_manager.count == 0) {
+              if (!load_words_from_server()) {
+                mvprintw(Y_STATUS_MSG, X_DEFAULT_POS, "Failed to load word list from server.");
+                wait_for_key_or_signal(Y_STATUS_MSG + 2, X_DEFAULT_POS, "Press any key...");
+                is_game_running = false;
+                break;
+              }
             }
 
             is_game_running = true;
-            clear(); refresh();
+            clear();
+            refresh();
 
             int final_score = run_rain_typing_game(user_id);
             is_game_running = false;
