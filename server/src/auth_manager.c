@@ -1,70 +1,88 @@
-
-
+// server/src/auth_manager.c
 #include "auth_manager.h"
-#include "db_handler.h"
-#include "hash_util.h"  // 해시 함수 추가
 
 #include <stdio.h>
 #include <string.h>
 
-// 인증 시스템 초기화
-void init_auth_system() {
-    printf("[AUTH_MANAGER] Auth system initialized (with SHA-256).\n");
-}
+#include "db_handler.h"
 
-// 회원가입 처리
+void init_auth_system() { printf("[AUTH_MANAGER] Auth system initialized (using file DB).\n"); }
+
 int register_user_impl(const char* username, const char* password, char* response_msg) {
-    if (!username || !password || strlen(username) == 0 || strlen(password) == 0) {
-        snprintf(response_msg, MAX_MSG_LEN, "Username and password cannot be empty.");
-        return 0;
-    }
+  if (username == NULL || password == NULL || strlen(username) == 0 || strlen(password) == 0) {
+    snprintf(response_msg, MAX_MSG_LEN, "Username and password cannot be empty.");
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    return 0;
+  }
+  if (strlen(username) >= MAX_ID_LEN || strlen(password) >= MAX_PW_LEN) {
+    snprintf(response_msg, MAX_MSG_LEN, "Username or password too long.");
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    return 0;
+  }
 
-    UserData existing;
-    if (find_user_in_file(username, &existing) == 1) {
-        snprintf(response_msg, MAX_MSG_LEN, "User '%s' already exists.", username);
-        return 0;
-    }
+  UserData existing_user;
+  int find_res = find_user_in_file(username, &existing_user);
 
-    UserData new_user;
-    strncpy(new_user.username, username, MAX_ID_LEN);
-    strncpy(new_user.password, password, MAX_PW_LEN);  // 평문 입력 저장 (해시 전용도 사용)
+  if (find_res == 1) {
+    snprintf(response_msg, MAX_MSG_LEN, "User '%s' already exists.", username);
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    return 0;
+  } else if (find_res == -1) {
+    snprintf(response_msg, MAX_MSG_LEN, "Error checking user existence (DB).");
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    return 0;
+  }
 
-    // add_user_to_file 내부에서 해싱 처리함
-    if (add_user_to_file(&new_user)) {
-        snprintf(response_msg, MAX_MSG_LEN, "User '%s' registered successfully.", username);
-        return 1;
-    }
-    else {
-        snprintf(response_msg, MAX_MSG_LEN, "Failed to register user '%s'.", username);
-        return 0;
-    }
+  UserData new_user;
+  strncpy(new_user.username, username, MAX_ID_LEN - 1);
+  new_user.username[MAX_ID_LEN - 1] = '\0';
+  strncpy(new_user.password, password, MAX_PW_LEN - 1);
+  new_user.password[MAX_PW_LEN - 1] = '\0';
+
+  if (add_user_to_file(&new_user)) {
+    snprintf(response_msg, MAX_MSG_LEN, "User '%s' registered successfully.", username);
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    return 1;
+  } else {
+    snprintf(response_msg, MAX_MSG_LEN, "Failed to save new user '%s' (DB).", username);
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    return 0;
+  }
 }
 
-// 로그인 처리
 int login_user_impl(const char* username, const char* password, char* response_msg, char* logged_in_user) {
-    if (!username || !password) {
-        snprintf(response_msg, MAX_MSG_LEN, "Username or password cannot be null.");
-        return 0;
-    }
+  if (username == NULL || password == NULL) {
+    snprintf(response_msg, MAX_MSG_LEN, "Username or password cannot be null.");
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    logged_in_user[0] = '\0';
+    return 0;
+  }
 
-    UserData stored_user;
-    if (find_user_in_file(username, &stored_user) != 1) {
-        snprintf(response_msg, MAX_MSG_LEN, "User '%s' not found.", username);
-        return 0;
-    }
+  UserData user_from_db;
+  int find_res = find_user_in_file(username, &user_from_db);
 
-    // 입력 비밀번호 해싱
-    char hashed_input[65];
-    compute_sha256(password, hashed_input);
+  if (find_res == 0) {
+    snprintf(response_msg, MAX_MSG_LEN, "User '%s' not found.", username);
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    logged_in_user[0] = '\0';
+    return 0;
+  } else if (find_res == -1) {
+    snprintf(response_msg, MAX_MSG_LEN, "Error finding user '%s' (DB).", username);
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    logged_in_user[0] = '\0';
+    return 0;
+  }
 
-    // 해시값 비교
-    if (strcmp(stored_user.password, hashed_input) == 0) {
-        snprintf(response_msg, MAX_MSG_LEN, "Login successful for '%s'.", username);
-        strncpy(logged_in_user, username, MAX_ID_LEN);
-        return 1;
-    }
-    else {
-        snprintf(response_msg, MAX_MSG_LEN, "Invalid password.");
-        return 0;
-    }
+  if (strcmp(user_from_db.password, password) == 0) {
+    snprintf(response_msg, MAX_MSG_LEN, "Login successful for '%s'.", username);
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    strncpy(logged_in_user, username, MAX_ID_LEN - 1);
+    logged_in_user[MAX_ID_LEN - 1] = '\0';
+    return 1;
+  } else {
+    snprintf(response_msg, MAX_MSG_LEN, "Invalid password for user '%s'.", username);
+    response_msg[MAX_MSG_LEN - 1] = '\0';
+    logged_in_user[0] = '\0';
+    return 0;
+  }
 }

@@ -1,114 +1,253 @@
-// À¯Àú Á¤º¸ ¹× Á¡¼ö ±â·ÏÀ» ÆÄÀÏ·Î ÀúÀåÇÏ°í ÀĞ¾î¿À´Â ÇÔ¼öµéÀ» Á¦°øÇÕ´Ï´Ù.
-// ºñ¹Ğ¹øÈ£´Â SHA-256 ÇØ½Ã·Î ÀúÀåµÇ¸ç, ÁÙ¹Ù²Ş ¹®ÀÚ Á¦°Å Ã³¸® Æ÷ÇÔ.
-
+// server/src/db_handler.c
 #include "db_handler.h"
-#include "hash_util.h"  //  SHA-256 ÇØ½Ã ÇÔ¼ö Æ÷ÇÔ
 
-#include <fcntl.h>
+#include <errno.h>
+#include <fcntl.h>  // open() í”Œë˜ê·¸ë“¤
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
+#include <sys/stat.h>   // mkdir(), stat()
+#include <sys/types.h>  // íƒ€ì… ì •ì˜ë“¤
+#include <unistd.h>     // read(), write(), close()
 
-#define USERS_FILE_PATH "data/users.txt"
-#define SCORES_FILE_PATH "data/scores.txt"
+#define DATA_DIR_PATH "data"
+#define USERS_FILE_PATH DATA_DIR_PATH "/users.txt"
+#define SCORES_FILE_PATH DATA_DIR_PATH "/scores.txt"
 
-// ÆÄÀÏ¿¡¼­ ÇÑ ÁÙÀ» ÀĞ¾î¿À´Â À¯Æ¿ ÇÔ¼ö
-static ssize_t read_line(int fd, char* buffer, size_t buffer_size) {
-    size_t pos = 0;
-    char ch;
-    ssize_t bytes_read;
+// ìœ í‹¸ë¦¬í‹° í•¨ìˆ˜ë“¤
+static ssize_t write_string(int fd, const char *str) {
+  size_t len = strlen(str);
+  return write(fd, str, len);
+}
 
-    while (pos < buffer_size - 1) {
-        bytes_read = read(fd, &ch, 1);
-        if (bytes_read <= 0) break;
-        if (ch == '\n') break;
-        buffer[pos++] = ch;
+static ssize_t write_formatted_user(int fd, const char *username, const char *password) {
+  char buffer[MAX_ID_LEN + MAX_PW_LEN + 4];  // username:password\n\0
+  int len = snprintf(buffer, sizeof(buffer), "%s:%s\n", username, password);
+  if (len < 0 || len >= (int)sizeof(buffer)) {
+    return -1;
+  }
+  return write(fd, buffer, len);
+}
+
+static ssize_t write_formatted_score(int fd, const char *username, int score) {
+  char buffer[MAX_ID_LEN + 16];  // username:score\n\0 (ì ìˆ˜ëŠ” ìµœëŒ€ 10ìë¦¬ + ì—¬ìœ ë¶„)
+  int len = snprintf(buffer, sizeof(buffer), "%s:%d\n", username, score);
+  if (len < 0 || len >= (int)sizeof(buffer)) {
+    return -1;
+  }
+  return write(fd, buffer, len);
+}
+
+// í•œ ì¤„ì”© ì½ê¸° ìœ„í•œ ë²„í¼ ê¸°ë°˜ ì½ê¸° í•¨ìˆ˜
+static ssize_t read_line(int fd, char *buffer, size_t buffer_size) {
+  size_t pos = 0;
+  char ch;
+  ssize_t bytes_read;
+
+  while (pos < buffer_size - 1) {
+    bytes_read = read(fd, &ch, 1);
+    if (bytes_read == 0) {     // EOF
+      if (pos == 0) return 0;  // ì•„ë¬´ê²ƒë„ ì½ì§€ ëª»í•¨
+      break;
+    }
+    if (bytes_read < 0) {  // ì—ëŸ¬
+      return -1;
     }
 
-    buffer[pos] = '\0';
-    return pos;
+    if (ch == '\n') {
+      break;
+    }
+
+    buffer[pos++] = ch;
+  }
+
+  buffer[pos] = '\0';
+  return pos;
 }
 
-//  users.txt ¹× scores.txt ÆÄÀÏÀÌ ¾øÀ¸¸é »ı¼ºÇÕ´Ï´Ù.
-void init_db_files() {
-    mkdir("data", 0755);
-    int fd1 = open(USERS_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd1 >= 0) close(fd1);
-    int fd2 = open(SCORES_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd2 >= 0) close(fd2);
-}
+static int create_directory_if_not_exists(const char *path) {
+  struct stat st = {0};
 
-// ¾ÆÀÌµğ·Î À¯Àú Á¤º¸¸¦ °Ë»öÇÕ´Ï´Ù (ºñ¹Ğ¹øÈ£´Â ÇØ½Ã ¹®ÀÚ¿­)
-int find_user_in_file(const char* username, UserData* found_user) {
-    int fd = open(USERS_FILE_PATH, O_RDONLY);
-    if (fd == -1) return -1;
-
-    char line[256];
-    while (read_line(fd, line, sizeof(line)) > 0) {
-        char* colon = strchr(line, ':');
-        if (!colon) continue;
-        *colon = '\0';
-        char* stored_username = line;
-        char* stored_hash = colon + 1;
-
-        // °³Çà ¹®ÀÚ Á¦°Å (ºñ±³ Á¤È®µµ º¸Àå)
-        stored_hash[strcspn(stored_hash, "\r\n")] = '\0';
-
-        if (strcmp(stored_username, username) == 0) {
-            strncpy(found_user->username, stored_username, MAX_ID_LEN);
-            strncpy(found_user->password, stored_hash, MAX_PW_LEN);
-            close(fd);
-            return 1;
+  if (stat(path, &st) == 0) {
+    if (S_ISDIR(st.st_mode)) {
+      return 0;  // ë””ë ‰í„°ë¦¬ ì¡´ì¬
+    } else {
+      fprintf(stderr, "[DB_HANDLER] Error: Path exists but is not a directory: %s\n", path);
+      return -1;
+    }
+  } else {
+    // ë””ë ‰í„°ë¦¬ ìƒì„± ì‹œë„
+    if (mkdir(path, 0755) == 0) {
+      printf("[DB_HANDLER] Directory created: %s\n", path);
+      return 0;
+    } else {
+      if (errno == EEXIST) {
+        // ë‹¤ë¥¸ í”„ë¡œì„¸ìŠ¤ê°€ ìƒì„±í–ˆì„ ìˆ˜ ìˆìŒ, ì¬í™•ì¸
+        if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+          return 0;
         }
+      }
+      perror("[DB_HANDLER] mkdir failed");
+      fprintf(stderr, "[DB_HANDLER] Failed to create directory: %s (errno: %d)\n", path, errno);
+      return -1;
+    }
+  }
+}
+
+void init_db_files() {
+  if (create_directory_if_not_exists(DATA_DIR_PATH) != 0) {
+    fprintf(stderr, "[DB_HANDLER] Critical: Could not ensure data directory %s exists. Exiting.\n", DATA_DIR_PATH);
+    exit(EXIT_FAILURE);
+  }
+
+  // ì‚¬ìš©ì íŒŒì¼ ìƒì„±/í™•ì¸ (O_CREATìœ¼ë¡œ ì—†ìœ¼ë©´ ìƒì„±)
+  int fd_users = open(USERS_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
+  if (fd_users == -1) {
+    perror("[DB_HANDLER] Failed to open/create users.txt");
+  } else {
+    close(fd_users);
+  }
+
+  // ì ìˆ˜ íŒŒì¼ ìƒì„±/í™•ì¸
+  int fd_scores = open(SCORES_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
+  if (fd_scores == -1) {
+    perror("[DB_HANDLER] Failed to open/create scores.txt");
+  } else {
+    close(fd_scores);
+  }
+
+  printf("[DB_HANDLER] Checked/Initialized data files: %s, %s\n", USERS_FILE_PATH, SCORES_FILE_PATH);
+}
+
+int find_user_in_file(const char *username, UserData *found_user) {
+  int fd = open(USERS_FILE_PATH, O_RDONLY);
+  if (fd == -1) {
+    if (errno == ENOENT) {
+      return 0;  // íŒŒì¼ì´ ì—†ìŒ = ì‚¬ìš©ì ì—†ìŒ
+    }
+    return -1;  // ë‹¤ë¥¸ ì—ëŸ¬
+  }
+
+  UserData current_user;
+  int found = 0;
+  char line_buffer[MAX_ID_LEN + MAX_PW_LEN + 3];  // username:password\n\0
+  ssize_t line_length;
+
+  while ((line_length = read_line(fd, line_buffer, sizeof(line_buffer))) > 0) {
+    // ì¤„ ë ê°œí–‰ ë¬¸ì ì œê±°ëŠ” read_lineì—ì„œ ì´ë¯¸ ì²˜ë¦¬ë¨
+
+    // username:password í˜•íƒœ íŒŒì‹±
+    char *colon_pos = strchr(line_buffer, ':');
+    if (colon_pos == NULL) {
+      continue;  // ì˜ëª»ëœ í˜•ì‹ì˜ ì¤„ì€ ê±´ë„ˆë›°ê¸°
     }
 
+    *colon_pos = '\0';  // username ë¶€ë¶„ ë¶„ë¦¬
+    char *password_part = colon_pos + 1;
+
+    // ê¸¸ì´ ì²´í¬ ë° ë³µì‚¬
+    if (strlen(line_buffer) < MAX_ID_LEN && strlen(password_part) < MAX_PW_LEN) {
+      strncpy(current_user.username, line_buffer, MAX_ID_LEN - 1);
+      current_user.username[MAX_ID_LEN - 1] = '\0';
+      strncpy(current_user.password, password_part, MAX_PW_LEN - 1);
+      current_user.password[MAX_PW_LEN - 1] = '\0';
+
+      if (strcmp(current_user.username, username) == 0) {
+        if (found_user != NULL) {
+          *found_user = current_user;
+        }
+        found = 1;
+        break;
+      }
+    }
+  }
+
+  close(fd);
+  return found;
+}
+
+int add_user_to_file(const UserData *user) {
+  int fd = open(USERS_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
+  if (fd == -1) {
+    perror("[DB_HANDLER] add_user_to_file: open users.txt");
+    return 0;
+  }
+
+  ssize_t bytes_written = write_formatted_user(fd, user->username, user->password);
+  if (bytes_written <= 0) {
+    perror("[DB_HANDLER] add_user_to_file: write users.txt");
     close(fd);
     return 0;
+  }
+
+  if (close(fd) != 0) {
+    perror("[DB_HANDLER] add_user_to_file: close users.txt");
+    return 0;
+  }
+
+  return 1;
 }
 
-// À¯Àú¸¦ users.txt¿¡ Ãß°¡ÇÕ´Ï´Ù (ºñ¹Ğ¹øÈ£´Â ÇØ½Ã·Î ÀúÀå)
-int add_user_to_file(const UserData* user) {
-    int fd = open(USERS_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd == -1) return 0;
+int add_score_to_file(const char *username, int score) {
+  int fd = open(SCORES_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
+  if (fd == -1) {
+    perror("[DB_HANDLER] add_score_to_file: open scores.txt");
+    return 0;
+  }
 
-    char hashed_pw[65];
-    compute_sha256(user->password, hashed_pw);  // ºñ¹Ğ¹øÈ£ ÇØ½Ì Ã³¸®
-
-    dprintf(fd, "%s:%s\n", user->username, hashed_pw);
+  ssize_t bytes_written = write_formatted_score(fd, username, score);
+  if (bytes_written <= 0) {
+    perror("[DB_HANDLER] add_score_to_file: write scores.txt");
     close(fd);
-    return 1;
+    return 0;
+  }
+
+  if (close(fd) != 0) {
+    perror("[DB_HANDLER] add_score_to_file: close scores.txt");
+    return 0;
+  }
+
+  return 1;
 }
 
-// Á¡¼ö¸¦ scores.txt¿¡ Ãß°¡ÇÕ´Ï´Ù
-int add_score_to_file(const char* username, int score) {
-    int fd = open(SCORES_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd == -1) return 0;
-    dprintf(fd, "%s:%d\n", username, score);
-    close(fd);
-    return 1;
-}
-
-// scores.txt¿¡¼­ ¸ğµç Á¡¼ö¸¦ ÀĞ¾î¿É´Ï´Ù
 int load_all_scores_from_file(ScoreRecord scores[], int max_records) {
-    int fd = open(SCORES_FILE_PATH, O_RDONLY);
-    if (fd == -1) return -1;
+  int fd = open(SCORES_FILE_PATH, O_RDONLY);
+  if (fd == -1) {
+    if (errno == ENOENT) {
+      return 0;  // íŒŒì¼ì´ ì—†ìŒ = ì ìˆ˜ ì—†ìŒ
+    }
+    return -1;  // ë‹¤ë¥¸ ì—ëŸ¬
+  }
 
-    int count = 0;
-    char line[256];
-    while (count < max_records && read_line(fd, line, sizeof(line)) > 0) {
-        char* colon = strchr(line, ':');
-        if (!colon) continue;
-        *colon = '\0';
-        char* username = line;
-        int score = atoi(colon + 1);
+  int count = 0;
+  char line_buffer[MAX_ID_LEN + 16];  // username:score\n\0
+  ssize_t line_length;
 
-        strncpy(scores[count].username, username, MAX_ID_LEN);
-        scores[count].score = score;
-        count++;
+  while (count < max_records && (line_length = read_line(fd, line_buffer, sizeof(line_buffer))) > 0) {
+    // username:score í˜•íƒœ íŒŒì‹±
+    char *colon_pos = strchr(line_buffer, ':');
+    if (colon_pos == NULL) {
+      continue;  // ì˜ëª»ëœ í˜•ì‹ì˜ ì¤„ì€ ê±´ë„ˆë›°ê¸°
     }
 
-    close(fd);
-    return count;
+    *colon_pos = '\0';  // username ë¶€ë¶„ ë¶„ë¦¬
+    char *score_part = colon_pos + 1;
+
+    // ì‚¬ìš©ìëª… ê¸¸ì´ ì²´í¬ ë° ë³µì‚¬
+    if (strlen(line_buffer) < MAX_ID_LEN) {
+      strncpy(scores[count].username, line_buffer, MAX_ID_LEN - 1);
+      scores[count].username[MAX_ID_LEN - 1] = '\0';
+
+      // ì ìˆ˜ íŒŒì‹±
+      char *endptr;
+      long score_value = strtol(score_part, &endptr, 10);
+      if (endptr != score_part && *endptr == '\0') {  // ì„±ê³µì ìœ¼ë¡œ íŒŒì‹±ë¨
+        scores[count].score = (int)score_value;
+        count++;
+      }
+    }
+  }
+
+  close(fd);
+  return count;
 }
