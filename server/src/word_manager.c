@@ -53,12 +53,6 @@ static ssize_t read_line_direct(int fd, char* buffer, size_t buffer_size) {
   return pos;
 }
 
-// 문자열 쓰기 함수
-static ssize_t write_string_direct(int fd, const char* str) {
-  size_t len = strlen(str);
-  return write(fd, str, len);
-}
-
 // 기본 단어 목록을 파일에 쓰기
 static int write_default_words_to_file(const char* path) {
   int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -68,13 +62,8 @@ static int write_default_words_to_file(const char* path) {
   }
 
   for (size_t i = 0; i < DEFAULT_WORD_COUNT; ++i) {
-    if (write_string_direct(fd, default_words[i]) <= 0) {
+    if (dprintf(fd, "%s\n", default_words[i]) <= 0) {
       perror("[WORD_MANAGER] Failed to write default word");
-      close(fd);
-      return -1;
-    }
-    if (write(fd, "\n", 1) != 1) {
-      perror("[WORD_MANAGER] Failed to write newline");
       close(fd);
       return -1;
     }

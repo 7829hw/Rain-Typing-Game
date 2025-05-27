@@ -14,30 +14,6 @@
 #define USERS_FILE_PATH DATA_DIR_PATH "/users.txt"
 #define SCORES_FILE_PATH DATA_DIR_PATH "/scores.txt"
 
-// 유틸리티 함수들
-static ssize_t write_string(int fd, const char *str) {
-  size_t len = strlen(str);
-  return write(fd, str, len);
-}
-
-static ssize_t write_formatted_user(int fd, const char *username, const char *password) {
-  char buffer[MAX_ID_LEN + MAX_PW_LEN + 4];  // username:password\n\0
-  int len = snprintf(buffer, sizeof(buffer), "%s:%s\n", username, password);
-  if (len < 0 || len >= (int)sizeof(buffer)) {
-    return -1;
-  }
-  return write(fd, buffer, len);
-}
-
-static ssize_t write_formatted_score(int fd, const char *username, int score) {
-  char buffer[MAX_ID_LEN + 16];  // username:score\n\0 (점수는 최대 10자리 + 여유분)
-  int len = snprintf(buffer, sizeof(buffer), "%s:%d\n", username, score);
-  if (len < 0 || len >= (int)sizeof(buffer)) {
-    return -1;
-  }
-  return write(fd, buffer, len);
-}
-
 // 한 줄씩 읽기 위한 버퍼 기반 읽기 함수
 static ssize_t read_line(int fd, char *buffer, size_t buffer_size) {
   size_t pos = 0;
@@ -173,7 +149,7 @@ int add_user_to_file(const UserData *user) {
     return 0;
   }
 
-  ssize_t bytes_written = write_formatted_user(fd, user->username, user->password);
+  int bytes_written = dprintf(fd, "%s:%s\n", user->username, user->password);
   if (bytes_written <= 0) {
     perror("[DB_HANDLER] add_user_to_file: write users.txt");
     close(fd);
@@ -195,7 +171,7 @@ int add_score_to_file(const char *username, int score) {
     return 0;
   }
 
-  ssize_t bytes_written = write_formatted_score(fd, username, score);
+  int bytes_written = dprintf(fd, "%s:%d\n", username, score);
   if (bytes_written <= 0) {
     perror("[DB_HANDLER] add_score_to_file: write scores.txt");
     close(fd);
