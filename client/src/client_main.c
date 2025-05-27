@@ -11,6 +11,7 @@
 #include "client_globals.h"
 #include "client_network.h"
 #include "game_logic.h"
+#include "hash_util.h" /* 암호화 시스템 정리를 위해 추가 */
 #include "leaderboard_ui.h"
 #include "protocol.h"
 
@@ -60,6 +61,7 @@ static void perform_cleanup_and_exit(int code, const char* msg) {
   cleanup_word_manager();
   cleanup_active_word_table();
   disconnect_from_server();
+  crypto_cleanup(); /* 암호화 시스템 정리 추가 */
   end_ncurses_settings();
   if (msg) printf("%s\n", msg);
   exit(code);
@@ -88,6 +90,11 @@ static int load_words_from_server(void) {
 int main() {
   signal(SIGINT, handle_sigint);
   init_ncurses_settings();
+
+  /* 암호화 시스템 초기화 */
+  if (!crypto_init()) {
+    perform_cleanup_and_exit(EXIT_FAILURE, "Failed to initialize cryptographic system.");
+  }
 
   if (!init_word_manager()) {
     perform_cleanup_and_exit(EXIT_FAILURE, "Failed to initialize word manager.");

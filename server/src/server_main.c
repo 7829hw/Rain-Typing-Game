@@ -10,6 +10,7 @@
 
 #include "auth_manager.h"
 #include "db_handler.h"
+#include "hash_util.h" /* 암호화 시스템 정리를 위해 추가 */
 #include "score_manager.h"
 #include "server_network.h"
 #include "word_manager.h"
@@ -68,6 +69,7 @@ int main() {
   printf("Rain Typing Game Server started on port %d...\n", PORT);
   printf("Press Ctrl+C to shut down the server.\n");
 
+  /* 시스템 초기화 */
   init_db_files();
 
   if (load_wordlist_from_file("data/words.txt") <= 0) {
@@ -77,7 +79,7 @@ int main() {
 
   extern void init_logged_in_users();
   init_logged_in_users();
-  init_auth_system();
+  init_auth_system(); /* 암호화 시스템도 여기서 초기화됨 */
   init_score_system();
 
   while (!server_shutdown_requested) {
@@ -122,6 +124,10 @@ int main() {
     close(server_sock_fd);
     server_sock_fd = -1;
   }
+
+  /* 암호화 시스템 정리 */
+  crypto_cleanup();
+
   printf("[SERVER_MAIN] Server has shut down.\n");
   return 0;
 }

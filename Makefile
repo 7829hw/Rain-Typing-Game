@@ -1,8 +1,8 @@
 ###############################################################################
-# Rain-Typing-Game  ──  unified Makefile
+# Rain-Typing-Game
 #  * 빌드 결과
-#       bin/rain_client      ← ncurses 클라이언트
-#       bin/rain_server      ← TCP 서버
+#       bin/rain_client      ← ncurses 클라이언트 (암호화 지원)
+#       bin/rain_server      ← TCP 서버 (암호화 지원)
 ###############################################################################
 
 # ───── 공통 ────────────────────────────────────────────────────────────────────
@@ -12,6 +12,7 @@ LDFLAGS  :=
 LIBS     := -lpthread
 
 COMMON_INC := common/include
+COMMON_SRC := common/src
 CLIENT_INC := client/include
 SERVER_INC := server/include
 
@@ -19,7 +20,15 @@ OBJ_DIR := obj
 BIN_DIR := bin
 
 # 빌드 디렉터리 생성
-$(shell mkdir -p $(OBJ_DIR)/client $(OBJ_DIR)/server $(BIN_DIR))
+$(shell mkdir -p $(OBJ_DIR)/client $(OBJ_DIR)/server $(OBJ_DIR)/common $(BIN_DIR))
+
+# ───── 공통 소스 (암호화 유틸리티) ─────────────────────────────────────────────
+COMMON_SOURCES := \
+    $(COMMON_SRC)/hash_util.c
+
+COMMON_OBJS := $(patsubst $(COMMON_SRC)/%.c,$(OBJ_DIR)/common/%.o,$(COMMON_SOURCES))
+COMMON_CFLAGS := $(CFLAGS) -I$(COMMON_INC)
+CRYPTO_LIBS := -lssl -lcrypto  # OpenSSL 라이브러리
 
 # ───── 클라이언트 ─────────────────────────────────────────────────────────────
 CLIENT_SRC := \
@@ -31,7 +40,7 @@ CLIENT_SRC := \
 
 CLIENT_OBJS := $(patsubst client/src/%.c,$(OBJ_DIR)/client/%.o,$(CLIENT_SRC))
 CLIENT_CFLAGS := $(CFLAGS) -I$(CLIENT_INC) -I$(COMMON_INC)
-CLIENT_LIBS   := -lncursesw -lpthread
+CLIENT_LIBS   := -lncursesw -lpthread $(CRYPTO_LIBS)
 CLIENT_BIN    := $(BIN_DIR)/rain_client
 
 # ───── 서버 ───────────────────────────────────────────────────────────────────
@@ -45,6 +54,7 @@ SERVER_SRC := \
 
 SERVER_OBJS := $(patsubst server/src/%.c,$(OBJ_DIR)/server/%.o,$(SERVER_SRC))
 SERVER_CFLAGS := $(CFLAGS) -I$(SERVER_INC) -I$(COMMON_INC)
+SERVER_LIBS   := $(LIBS) $(CRYPTO_LIBS)
 SERVER_BIN    := $(BIN_DIR)/rain_server
 
 # ───── 기본 타깃 ──────────────────────────────────────────────────────────────
@@ -53,9 +63,14 @@ SERVER_BIN    := $(BIN_DIR)/rain_server
 all: $(CLIENT_BIN) $(SERVER_BIN)
 	@echo "=== Build finished successfully ==="
 
+# ───── 공통 오브젝트 빌드 ─────────────────────────────────────────────────────
+$(OBJ_DIR)/common/%.o: $(COMMON_SRC)/%.c
+	@echo "Compiling (Common): $<"
+	$(CC) $(COMMON_CFLAGS) -c $< -o $@
+
 # ───── 클라이언트 빌드 ────────────────────────────────────────────────────────
-$(CLIENT_BIN): $(CLIENT_OBJS)
-	@echo ">>> Linking client executable..."
+$(CLIENT_BIN): $(CLIENT_OBJS) $(COMMON_OBJS)
+	@echo ">>> Linking client executable with crypto support..."
 	$(CC) $^ -o $@ $(LDFLAGS) $(CLIENT_LIBS)
 
 $(OBJ_DIR)/client/%.o: client/src/%.c
@@ -65,9 +80,9 @@ $(OBJ_DIR)/client/%.o: client/src/%.c
 client: $(CLIENT_BIN)
 
 # ───── 서버 빌드 ──────────────────────────────────────────────────────────────
-$(SERVER_BIN): $(SERVER_OBJS)
-	@echo ">>> Linking server executable..."
-	$(CC) $^ -o $@ $(LDFLAGS) $(LIBS)
+$(SERVER_BIN): $(SERVER_OBJS) $(COMMON_OBJS)
+	@echo ">>> Linking server executable with crypto support..."
+	$(CC) $^ -o $@ $(LDFLAGS) $(SERVER_LIBS)
 
 $(OBJ_DIR)/server/%.o: server/src/%.c
 	@echo "Compiling (Server): $<"
