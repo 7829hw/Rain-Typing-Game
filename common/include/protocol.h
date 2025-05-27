@@ -7,7 +7,7 @@
  *  공통 한계치
  * ────────────────────────────────────────────*/
 #define MAX_ID_LEN                 32
-#define MAX_PW_LEN                 32
+#define MAX_PW_LEN                 65
 #define MAX_MSG_LEN                128
 #define MAX_LEADERBOARD_ENTRIES    10
 
