@@ -11,7 +11,8 @@
 #include "client_globals.h"
 #include "client_network.h"
 #include "game_logic.h"
-#include "hash_util.h" /* 암호화 시스템 정리를 위해 추가 */
+#include "hash_util.h"      /* 암호화 시스템 정리를 위해 추가 */
+#include "how_to_play_ui.h" /* 게임 방법 설명 UI 추가 */
 #include "leaderboard_ui.h"
 #include "protocol.h"
 
@@ -144,9 +145,10 @@ int main() {
         mvprintw(Y_TITLE, X_DEFAULT_POS, "Logged in as: %s", user_id);
         mvprintw(Y_OPTIONS_START, X_DEFAULT_POS, "1. Start Game");
         mvprintw(Y_OPTIONS_START + 1, X_DEFAULT_POS, "2. View Leaderboard");
-        mvprintw(Y_OPTIONS_START + 2, X_DEFAULT_POS, "3. Logout");
-        mvprintw(Y_OPTIONS_START + 3, X_DEFAULT_POS, "4. Exit Game");
-        mvprintw(Y_OPTIONS_START + 5, X_DEFAULT_POS, "Select an option: ");
+        mvprintw(Y_OPTIONS_START + 2, X_DEFAULT_POS, "3. How to Play");
+        mvprintw(Y_OPTIONS_START + 3, X_DEFAULT_POS, "4. Logout");
+        mvprintw(Y_OPTIONS_START + 4, X_DEFAULT_POS, "5. Exit Game");
+        mvprintw(Y_OPTIONS_START + 6, X_DEFAULT_POS, "Select an option: ");
         refresh();
 
         int choice = getch();
@@ -211,7 +213,14 @@ int main() {
               stay_in_menu = false;
             }
             break;
-          case '3': {
+          case '3':
+            /* 게임 방법 설명 UI 표시 */
+            show_how_to_play_ui();
+            if (sigint_received) {
+              stay_in_menu = false;
+            }
+            break;
+          case '4': {
             LogoutResponse logout_res;
             int ret = send_logout_request(&logout_res);
             if (sigint_received) {
@@ -233,7 +242,7 @@ int main() {
             }
             break;
           }
-          case '4': {
+          case '5': {
             clear();
             const char* exit_confirm_msg = "Are you sure you want to exit? (y/n)";
             mvprintw(LINES / 2 - 1, (COLS - strlen(exit_confirm_msg)) / 2, "%s", exit_confirm_msg);

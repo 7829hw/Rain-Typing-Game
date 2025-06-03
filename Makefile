@@ -1,8 +1,8 @@
 ###############################################################################
 # Rain-Typing-Game
 #  * 빌드 결과
-#       bin/rain_client      ← ncurses 클라이언트 (암호화 지원)
-#       bin/rain_server      ← TCP 서버 (암호화 지원)
+#       bin/rain_client      ← ncurses 클라이언트
+#       bin/rain_server      ← TCP 서버
 ###############################################################################
 
 # ───── 공통 ────────────────────────────────────────────────────────────────────
@@ -30,11 +30,12 @@ COMMON_OBJS := $(patsubst $(COMMON_SRC)/%.c,$(OBJ_DIR)/common/%.o,$(COMMON_SOURC
 COMMON_CFLAGS := $(CFLAGS) -I$(COMMON_INC)
 CRYPTO_LIBS := -lssl -lcrypto  # OpenSSL 라이브러리
 
-# ───── 클라이언트 ─────────────────────────────────────────────────────────────
+# ───── 클라이언트 ──────────────────────────────────────
 CLIENT_SRC := \
     client/src/client_main.c \
     client/src/auth_ui.c \
     client/src/leaderboard_ui.c \
+    client/src/how_to_play_ui.c \
     client/src/client_network.c \
     client/src/game_logic.c
 
