@@ -360,7 +360,7 @@ static void spawn_word(void) {
       words[i].x = (GAME_AREA_WIDTH > len) ? rand() % (GAME_AREA_WIDTH - len + 1) : 0;
       words[i].active = true;
       words[i].to_remove = false;
-      words[i].wtype = (rand() % 100 < 33) ? WORD_KILL : (rand() % 100 < 66) ? WORD_BONUS : WORD_NORMAL;
+      words[i].wtype = (rand() % 100 < 20) ? WORD_KILL : (rand() % 100 < 30) ? WORD_BONUS : WORD_NORMAL;
 
       // 활성 단어 테이블에 추가
       add_active_word(words[i].text);
