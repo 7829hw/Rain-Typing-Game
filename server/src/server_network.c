@@ -15,7 +15,7 @@
 #include "score_manager.h"
 #include "word_manager.h"
 
-/* 로그인된 사용자 관리 구조체 */
+// 로그인된 사용자 관리 구조체
 typedef struct {
   char username[MAX_ID_LEN];
   int client_sock;
@@ -26,7 +26,7 @@ typedef struct {
 static LoggedInUser logged_in_users[MAX_LOGGED_IN_USERS];
 static pthread_mutex_t logged_in_users_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* 사용자가 이미 로그인되어 있는지 확인하는 함수 */
+// 사용자가 이미 로그인되어 있는지 확인하는 함수
 static int is_user_already_logged_in(const char* username) {
   int result = -1;
   pthread_mutex_lock(&logged_in_users_mutex);
@@ -40,7 +40,7 @@ static int is_user_already_logged_in(const char* username) {
   return result;
 }
 
-/* 사용자를 로그인 목록에 추가하는 함수 */
+// 사용자를 로그인 목록에 추가하는 함수
 static int add_logged_in_user(const char* username, int client_sock) {
   int result = 0;
   pthread_mutex_lock(&logged_in_users_mutex);
@@ -58,7 +58,7 @@ static int add_logged_in_user(const char* username, int client_sock) {
   return result;
 }
 
-/* 사용자를 로그인 목록에서 제거하는 함수 */
+// 사용자를 로그인 목록에서 제거하는 함수
 static void remove_logged_in_user(const char* username) {
   pthread_mutex_lock(&logged_in_users_mutex);
   for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
@@ -70,19 +70,13 @@ static void remove_logged_in_user(const char* username) {
   pthread_mutex_unlock(&logged_in_users_mutex);
 }
 
-/* 서버 시작 시 로그인 사용자 목록 초기화 */
+// 서버 시작 시 로그인 사용자 목록 초기화
 void init_logged_in_users() {
   pthread_mutex_lock(&logged_in_users_mutex);
   for (int i = 0; i < MAX_LOGGED_IN_USERS; i++) {
     logged_in_users[i].is_active = false;
   }
   pthread_mutex_unlock(&logged_in_users_mutex);
-}
-
-/* 서버 종료 시 로그인 사용자 mutex 정리 */
-void cleanup_logged_in_users_mutex() {
-  pthread_mutex_destroy(&logged_in_users_mutex);
-  printf("[SERVER_NETWORK] Logged-in users mutex cleaned up\n");
 }
 
 void* handle_client(void* arg) {
@@ -135,7 +129,7 @@ void* handle_client(void* arg) {
         LoginRequest* req = (LoginRequest*)(buffer + sizeof(MessageHeader));
         LoginResponse resp_data;
 
-        /* 이미 로그인된 사용자인지 확인 */
+        // 이미 로그인된 사용자인지 확인
         if (is_user_already_logged_in(req->username) != -1) {
           resp_data.success = 0;
           strncpy(resp_data.message, "이 ID는 이미 다른 세션에서 로그인 중입니다.", MAX_MSG_LEN - 1);
@@ -143,9 +137,9 @@ void* handle_client(void* arg) {
         } else {
           resp_data.success = login_user_impl(req->username, req->password, resp_data.message, current_user);
           if (resp_data.success) {
-            /* 로그인 성공 시 목록에 추가 */
+            // 로그인 성공 시 목록에 추가
             if (!add_logged_in_user(current_user, client_sock)) {
-              /* 로그인 목록에 추가 실패 (목록이 꽉 참) */
+              // 로그인 목록에 추가 실패 (목록이 꽉 참)
               resp_data.success = 0;
               strncpy(current_user, "", MAX_ID_LEN);
               strncpy(resp_data.message, "서버 로그인 제한에 도달했습니다. 나중에 다시 시도하세요.", MAX_MSG_LEN - 1);
@@ -179,32 +173,22 @@ void* handle_client(void* arg) {
       }
       case MSG_TYPE_LEADERBOARD_REQ: {
         LeaderboardResponse resp_data;
-        /* 서버 사이드에서 점수 파일을 읽어와 응답 데이터 채우기 */
-        get_leaderboard_impl(resp_data.entries, &resp_data.count, MAX_LEADERBOARD_ENTRIES);
-        resp_header.type = MSG_TYPE_LEADERBOARD_RESP;
+        // 서버 사이드에서 점수 파일을 읽어와 응답 데이터 채우기
+        get_leaderboard_impl(resp_data.entries, &resp_data.count,
+                             MAX_LEADERBOARD_ENTRIES /* :contentReference[oaicite:2]{index=2}:contentReference[oaicite:3]{index=3} */
+        );
+        resp_header.type = MSG_TYPE_LEADERBOARD_RESP; /* :contentReference[oaicite:4]{index=4}:contentReference[oaicite:5]{index=5} */
         response_data_len = sizeof(LeaderboardResponse);
         memcpy(resp_data_ptr, &resp_data, response_data_len);
         break;
       }
       case MSG_TYPE_WORDLIST_REQ: {
-        /* Thread-safe wordlist 복사 및 전송 */
-        WordListResponse safe_wordlist;
-        if (!copy_wordlist_safe(&safe_wordlist)) {
-          /* 복사 실패 시 에러 응답 */
-          ErrorResponse err_resp;
-          snprintf(err_resp.message, MAX_MSG_LEN, "Failed to access word list");
-          resp_header.type = MSG_TYPE_ERROR;
-          response_data_len = sizeof(ErrorResponse);
-          memcpy(resp_data_ptr, &err_resp, response_data_len);
-          break;
-        }
-
         /* 한 덩어리 버퍼에 헤더와 본문을 붙여 전송 */
         char buf[sizeof(MessageHeader) + sizeof(WordListResponse)];
         MessageHeader hdr = {MSG_TYPE_WORDLIST_RESP, sizeof(WordListResponse)};
 
         memcpy(buf, &hdr, sizeof(hdr));
-        memcpy(buf + sizeof(hdr), &safe_wordlist, sizeof(WordListResponse));
+        memcpy(buf + sizeof(hdr), &g_wordlist, sizeof(WordListResponse));
 
         send(client_sock, buf, sizeof(buf), 0); /* 단일 send */
         send_response = false;                  /* 공통 루틴 skip */
@@ -214,7 +198,7 @@ void* handle_client(void* arg) {
         LogoutResponse resp_data;
         if (strlen(current_user) > 0) {
           printf("[SERVER_NETWORK] User %s logged out from socket %d.\n", current_user, client_sock);
-          /* 로그인 목록에서 제거 */
+          // 로그인 목록에서 제거
           remove_logged_in_user(current_user);
           memset(current_user, 0, sizeof(current_user));
           resp_data.success = 1;
@@ -256,10 +240,10 @@ void* handle_client(void* arg) {
     }
   }
 
-  /* 연결 종료 처리 부분(함수 끝부분) */
+  // 연결 종료 처리 부분(함수 끝부분)
   if (strlen(current_user) > 0) {
     printf("[SERVER_NETWORK] Cleaning up session for user %s on socket %d due to disconnect/error.\n", current_user, client_sock);
-    /* 로그인 목록에서 제거 */
+    // 로그인 목록에서 제거
     remove_logged_in_user(current_user);
   }
   close(client_sock);

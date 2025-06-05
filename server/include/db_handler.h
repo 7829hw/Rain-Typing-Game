@@ -23,7 +23,4 @@ int add_user_to_file(const UserData* user);
 int add_score_to_file(const char* username, int score);
 int load_all_scores_from_file(ScoreRecord scores[], int max_records);
 
-/* Thread-safe cleanup function */
-void cleanup_db_mutexes(void);
-
 #endif  // DB_HANDLER_H
