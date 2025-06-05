@@ -2,17 +2,23 @@
 #include "db_handler.h"
 
 #include <errno.h>
-#include <fcntl.h>  // open() 플래그들
+#include <fcntl.h>
+#include <pthread.h>  // mutex를 위해 추가
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>   // mkdir(), stat()
-#include <sys/types.h>  // 타입 정의들
-#include <unistd.h>     // read(), write(), close()
+#include <sys/file.h>  // flock() 함수를 위해 추가
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #define DATA_DIR_PATH "data"
 #define USERS_FILE_PATH DATA_DIR_PATH "/users.txt"
 #define SCORES_FILE_PATH DATA_DIR_PATH "/scores.txt"
+
+// 파일 접근 동기화를 위한 전역 mutex들
+static pthread_mutex_t users_file_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t scores_file_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // 한 줄씩 읽기 위한 버퍼 기반 읽기 함수
 static ssize_t read_line(int fd, char *buffer, size_t buffer_size) {
@@ -77,31 +83,46 @@ void init_db_files() {
   }
 
   // 사용자 파일 생성/확인 (O_CREAT으로 없으면 생성)
+  pthread_mutex_lock(&users_file_mutex);
   int fd_users = open(USERS_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
   if (fd_users == -1) {
     perror("[DB_HANDLER] Failed to open/create users.txt");
   } else {
     close(fd_users);
   }
+  pthread_mutex_unlock(&users_file_mutex);
 
   // 점수 파일 생성/확인
+  pthread_mutex_lock(&scores_file_mutex);
   int fd_scores = open(SCORES_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
   if (fd_scores == -1) {
     perror("[DB_HANDLER] Failed to open/create scores.txt");
   } else {
     close(fd_scores);
   }
+  pthread_mutex_unlock(&scores_file_mutex);
 
   printf("[DB_HANDLER] Checked/Initialized data files: %s, %s\n", USERS_FILE_PATH, SCORES_FILE_PATH);
 }
 
 int find_user_in_file(const char *username, UserData *found_user) {
+  pthread_mutex_lock(&users_file_mutex);
+
   int fd = open(USERS_FILE_PATH, O_RDONLY);
   if (fd == -1) {
+    pthread_mutex_unlock(&users_file_mutex);
     if (errno == ENOENT) {
       return 0;  // 파일이 없음 = 사용자 없음
     }
     return -1;  // 다른 에러
+  }
+
+  // 파일 락 적용
+  if (flock(fd, LOCK_SH) == -1) {
+    perror("[DB_HANDLER] Failed to acquire shared lock on users file");
+    close(fd);
+    pthread_mutex_unlock(&users_file_mutex);
+    return -1;
   }
 
   UserData current_user;
@@ -110,8 +131,6 @@ int find_user_in_file(const char *username, UserData *found_user) {
   ssize_t line_length;
 
   while ((line_length = read_line(fd, line_buffer, sizeof(line_buffer))) > 0) {
-    // 줄 끝 개행 문자 제거는 read_line에서 이미 처리됨
-
     // username:password 형태 파싱
     char *colon_pos = strchr(line_buffer, ':');
     if (colon_pos == NULL) {
@@ -138,61 +157,116 @@ int find_user_in_file(const char *username, UserData *found_user) {
     }
   }
 
+  flock(fd, LOCK_UN);  // 락 해제
   close(fd);
+  pthread_mutex_unlock(&users_file_mutex);
   return found;
 }
 
 int add_user_to_file(const UserData *user) {
+  pthread_mutex_lock(&users_file_mutex);
+
   int fd = open(USERS_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
   if (fd == -1) {
     perror("[DB_HANDLER] add_user_to_file: open users.txt");
+    pthread_mutex_unlock(&users_file_mutex);
+    return 0;
+  }
+
+  // 파일 락 적용 (배타적 락)
+  if (flock(fd, LOCK_EX) == -1) {
+    perror("[DB_HANDLER] Failed to acquire exclusive lock on users file");
+    close(fd);
+    pthread_mutex_unlock(&users_file_mutex);
     return 0;
   }
 
   int bytes_written = dprintf(fd, "%s:%s\n", user->username, user->password);
   if (bytes_written <= 0) {
     perror("[DB_HANDLER] add_user_to_file: write users.txt");
+    flock(fd, LOCK_UN);
     close(fd);
+    pthread_mutex_unlock(&users_file_mutex);
     return 0;
   }
 
+  // 즉시 디스크에 쓰기 (안전성 향상)
+  if (fsync(fd) != 0) {
+    perror("[DB_HANDLER] add_user_to_file: fsync users.txt");
+  }
+
+  flock(fd, LOCK_UN);  // 락 해제
   if (close(fd) != 0) {
     perror("[DB_HANDLER] add_user_to_file: close users.txt");
+    pthread_mutex_unlock(&users_file_mutex);
     return 0;
   }
 
+  pthread_mutex_unlock(&users_file_mutex);
   return 1;
 }
 
 int add_score_to_file(const char *username, int score) {
+  pthread_mutex_lock(&scores_file_mutex);
+
   int fd = open(SCORES_FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
   if (fd == -1) {
     perror("[DB_HANDLER] add_score_to_file: open scores.txt");
+    pthread_mutex_unlock(&scores_file_mutex);
+    return 0;
+  }
+
+  // 파일 락 적용 (배타적 락)
+  if (flock(fd, LOCK_EX) == -1) {
+    perror("[DB_HANDLER] Failed to acquire exclusive lock on scores file");
+    close(fd);
+    pthread_mutex_unlock(&scores_file_mutex);
     return 0;
   }
 
   int bytes_written = dprintf(fd, "%s:%d\n", username, score);
   if (bytes_written <= 0) {
     perror("[DB_HANDLER] add_score_to_file: write scores.txt");
+    flock(fd, LOCK_UN);
     close(fd);
+    pthread_mutex_unlock(&scores_file_mutex);
     return 0;
   }
 
+  // 즉시 디스크에 쓰기 (안전성 향상)
+  if (fsync(fd) != 0) {
+    perror("[DB_HANDLER] add_score_to_file: fsync scores.txt");
+  }
+
+  flock(fd, LOCK_UN);  // 락 해제
   if (close(fd) != 0) {
     perror("[DB_HANDLER] add_score_to_file: close scores.txt");
+    pthread_mutex_unlock(&scores_file_mutex);
     return 0;
   }
 
+  pthread_mutex_unlock(&scores_file_mutex);
   return 1;
 }
 
 int load_all_scores_from_file(ScoreRecord scores[], int max_records) {
+  pthread_mutex_lock(&scores_file_mutex);
+
   int fd = open(SCORES_FILE_PATH, O_RDONLY);
   if (fd == -1) {
+    pthread_mutex_unlock(&scores_file_mutex);
     if (errno == ENOENT) {
       return 0;  // 파일이 없음 = 점수 없음
     }
     return -1;  // 다른 에러
+  }
+
+  // 파일 락 적용 (공유 락)
+  if (flock(fd, LOCK_SH) == -1) {
+    perror("[DB_HANDLER] Failed to acquire shared lock on scores file");
+    close(fd);
+    pthread_mutex_unlock(&scores_file_mutex);
+    return -1;
   }
 
   int count = 0;
@@ -224,6 +298,8 @@ int load_all_scores_from_file(ScoreRecord scores[], int max_records) {
     }
   }
 
+  flock(fd, LOCK_UN);  // 락 해제
   close(fd);
+  pthread_mutex_unlock(&scores_file_mutex);
   return count;
 }
